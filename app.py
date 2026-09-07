@@ -6,10 +6,8 @@ import json
 st.set_page_config(layout="wide")
 
 # Database Setup
-conn = sqlite3.connect("nep_ug_fast_secure.db", check_same_thread=False)
+conn = sqlite3.connect("nep_ug_final_fixed.db", check_same_thread=False)
 cursor = conn.cursor()
-cursor.execute("PRAGMA synchronous = OFF") 
-cursor.execute("PRAGMA journal_mode = MEMORY") 
 cursor.execute("CREATE TABLE IF NOT EXISTS data_store (id INTEGER PRIMARY KEY, js TEXT)")
 conn.commit()
 
@@ -36,23 +34,14 @@ u = st.session_state["user"]
 p_opts = ["📥 Upload"] if u == "Operator" else (["💻 Work"] if "Teacher" in u else ["📥 Upload", "💻 Work", "⚙️ Admin"])
 p = st.sidebar.radio("पैनल", p_opts)
 
-# 🎯 एरर फिक्स करने वाला स्मार्ट डेटाबेस रीडर
-@st.cache_data(show_spinner=False)
 def get_db():
-    cursor.execute("SELECT js FROM data_store ORDER BY id DESC LIMIT 1")
-    r = cursor.fetchone()
-    if r:
-        raw_data = r[0] # SQLite टुपल से स्ट्रिंग अलग करना
-        try:
-            # नया फास्ट फॉर्मेट ट्राई करें
-            return pd.read_json(raw_data, orient="split")
-        except Exception:
-            try:
-                # अगर पुराना डेटा है तो पुराने फॉर्मेट से लोड करें
-                return pd.DataFrame(json.loads(raw_data))
-            except Exception:
-                # अगर डेटा करप्ट है तो None दें
-                return None
+    try:
+        cursor.execute("SELECT js FROM data_store ORDER BY id DESC LIMIT 1")
+        r = cursor.fetchone()
+        if r and r[0]:
+            return pd.read_json(r[0], orient="split")
+    except Exception:
+        return None
     return None
 
 # --- UPLOAD PANEL ---
@@ -61,31 +50,32 @@ if p == "📥 Upload":
     f = st.file_uploader("एक्सेल/CSV फ़ाइल चुनें", type=["csv", "xlsx"])
     if f:
         if st.button("💾 एडमिन डेटाबेस में सेव करें"):
-            with st.spinner("फ़ाइल को डेटाबेस में सेव किया जा रहा है..."):
-                try:
-                    # फ़ाइल रीड करना
-                    if f.name.endswith('.csv'):
-                        df = pd.read_csv(f)
-                    else:
-                        df = pd.read_excel(f)
-                    
-                    # सबसे सेफ और फ़ास्ट तरीका
-                    fast_json = df.to_json(orient="split")
-                    cursor.execute("INSERT INTO data_store (js) VALUES (?)", (fast_json,))
-                    conn.commit()
-                    st.cache_data.clear() 
-                    st.success("⚡ डेटा सफलतापूर्वक सुरक्षित सेव हो गया!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"अपलोड में समस्या: {e}")
+            try:
+                df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
+                fast_json = df.to_json(orient="split")
+                cursor.execute("INSERT INTO data_store (js) VALUES (?)", (fast_json,))
+                conn.commit()
+                st.success("⚡ डेटा डेटाबेस में सुरक्षित सेव हो गया! अब आप 'Work Panel' में जा सकते हैं।")
+            except Exception as e:
+                st.error(f"अपलोड में समस्या: {e}")
 
 # --- WORK PANEL ---
 elif p == "💻 Work":
     st.title("💻 Work Panel (UG Data Validation)")
+    
+    # पहले डेटाबेस से डेटा लाने की कोशिश करें
     df = get_db()
-    if df is None or df.empty: 
-        st.info("ℹ️ डेटाबेस खाली है या पुराना डेटा फॉर्मेट इनवैलिड है। कृपया 'Entry Panel' या 'Admin Panel' में जाकर नया डेटा अपलोड करें।")
-    else:
+    
+    # 🎯 सेफ्टी नेट: अगर डेटाबेस खाली है, तो यहीं पर सीधे फाइल अपलोड करने का ऑप्शन दे दो!
+    if df is None or df.empty:
+        st.warning("⚠️ डेटाबेस अभी खाली है। काम शुरू करने के लिए नीचे अपनी एक्सेल/CSV फ़ाइल सीधे अपलोड करें:")
+        direct_file = st.file_uploader("यहाँ अपनी फ़ाइल अपलोड करें (Direct Mode):", type=["csv", "xlsx"], key="direct_work_file")
+        if direct_file:
+            df = pd.read_csv(direct_file) if direct_file.name.endswith('.csv') else pd.read_excel(direct_file)
+            st.success("📊 फ़ाइल सफलतापूर्वक लोड हो गई!")
+            
+    # अगर दोनों में से किसी भी तरीके से डेटा मिल गया, तो लिस्ट दिखाओ
+    if df is not None and not df.empty:
         # आवश्यक कॉलम्स खोजना
         el_col = next((c for c in df.columns if 'elig' in c.lower() or 'qual' in c.lower()), df.columns[0])
         deg_col = next((c for c in df.columns if 'deg' in c.lower() or 'course' in c.lower()), df.columns[0])
@@ -171,18 +161,17 @@ elif p == "💻 Work":
                 st.subheader("📊 3. लाइव वैरिफाइड UG डेटा टेबल")
                 display_df = df_ug.drop(columns=['combo'])
                 st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
+    else:
+        st.info("💡 कृपया काम शुरू करने के लिए ऊपर फ़ाइल अपलोड करें या 'Upload Panel' से डेटाबेस लोड करें।")
 
 # --- ADMIN PANEL ---
 elif p == "⚙️ Admin":
     st.title("⚙️ Admin Control")
     df = get_db()
-    if df is not None:
-        st.write(f"डेटाबेस में कुल सुरक्षित रिकॉर्ड्स: {len(df)}")
+    if df is not None: st.write(f"डेटाबेस में कुल सुरक्षित रिकॉर्ड्स: {len(df)}")
     del_p = st.text_input("डेटा डिलीट करने के लिए पासवर्ड डालें:", type="password")
-    if del_p == "psv123" and st.button("🔴 डेटाबेस पूरी तरह साफ करें"):
+    if del_p == "psv123" and st.button("🔴 मास्टर डेटाबेस साफ करें"):
         cursor.execute("DELETE FROM data_store")
         conn.commit()
-        st.cache_data.clear()
-        st.success("डेटाबेस खाली कर दिया गया है! अब आप नया डेटा अपलोड कर सकते हैं।")
-        st.markdown("<script>window.location.reload();</script>", unsafe_allow_html=True)
+        st.success("डेटाबेस पूरी तरह साफ़ कर दिया गया है!")
         st.rerun()
