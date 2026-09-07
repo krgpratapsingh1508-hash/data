@@ -11,10 +11,11 @@ cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS data_store (id INTEGER PRIMARY KEY, js TEXT)")
 conn.commit()
 
-# Session States cache
+# Session States
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "hide" not in st.session_state: st.session_state["hide"] = False
 if "ug_el" not in st.session_state: st.session_state["ug_el"] = []
+if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 
 # 1. LOGIN SYSTEM (Admin Password: psv123)
 if not st.session_state["ok"]:
@@ -38,43 +39,36 @@ def get_db():
     try:
         cursor.execute("SELECT js FROM data_store ORDER BY id DESC LIMIT 1")
         r = cursor.fetchone()
-        if r and r[0]:
-            return pd.read_json(r[0], orient="split")
-    except Exception:
-        return None
+        if r: return pd.read_json(r[0], orient="split")
+    except Exception: return None
     return None
 
 # --- UPLOAD PANEL ---
 if p == "📥 Upload":
     st.title("📥 Upload Panel")
     f = st.file_uploader("एक्सेल/CSV फ़ाइल चुनें", type=["csv", "xlsx"])
-    if f:
-        if st.button("💾 एडमिन डेटाबेस में सेव करें"):
-            try:
-                df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
-                fast_json = df.to_json(orient="split")
-                cursor.execute("INSERT INTO data_store (js) VALUES (?)", (fast_json,))
-                conn.commit()
-                st.success("⚡ डेटा डेटाबेस में सुरक्षित सेव हो गया! अब आप 'Work Panel' में जा सकते हैं।")
-            except Exception as e:
-                st.error(f"अपलोड में समस्या: {e}")
+    if f and st.button("💾 एडमिन डेटाबेस में सेव करें"):
+        try:
+            df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
+            cursor.execute("INSERT INTO data_store (js) VALUES (?)", (df.to_json(orient="split"),))
+            conn.commit()
+            st.session_state["deleted_cols"] = [] # नया अपलोड होने पर डिलीटेड लिस्ट रीसेट
+            st.success("⚡ डेटा सुरक्षित सेव हो गया!")
+        except Exception as e: st.error(f"समस्या: {e}")
 
 # --- WORK PANEL ---
 elif p == "💻 Work":
     st.title("💻 Work Panel (UG Data Validation)")
-    
-    # पहले डेटाबेस से डेटा लाने की कोशिश करें
     df = get_db()
     
-    # 🎯 सेफ्टी नेट: अगर डेटाबेस खाली है, तो यहीं पर सीधे फाइल अपलोड करने का ऑप्शन दे दो!
     if df is None or df.empty:
-        st.warning("⚠️ डेटाबेस अभी खाली है। काम शुरू करने के लिए नीचे अपनी एक्सेल/CSV फ़ाइल सीधे अपलोड करें:")
-        direct_file = st.file_uploader("यहाँ अपनी फ़ाइल अपलोड करें (Direct Mode):", type=["csv", "xlsx"], key="direct_work_file")
+        st.warning("⚠️ डेटाबेस खाली है। काम शुरू करने के लिए एक्सेल/CSV फ़ाइल सीधे अपलोड करें:")
+        direct_file = st.file_uploader("यहाँ फ़ाइल अपलोड करें (Direct Mode):", type=["csv", "xlsx"])
         if direct_file:
             df = pd.read_csv(direct_file) if direct_file.name.endswith('.csv') else pd.read_excel(direct_file)
-            st.success("📊 फ़ाइल सफलतापूर्वक लोड हो गई!")
+            st.session_state["deleted_cols"] = []
+            st.success("📊 फ़ाइल लोड हो गई!")
             
-    # अगर दोनों में से किसी भी तरीके से डेटा मिल गया, तो लिस्ट दिखाओ
     if df is not None and not df.empty:
         # आवश्यक कॉलम्स खोजना
         el_col = next((c for c in df.columns if 'elig' in c.lower() or 'qual' in c.lower()), df.columns[0])
@@ -100,18 +94,32 @@ elif p == "💻 Work":
                 st.rerun()
 
         if st.session_state["hide"]:
+            # 1. एलिजिबिलिटी फ़िल्टर
             df_ug = df[df[el_col].isin(st.session_state["ug_el"])].reset_index(drop=True)
             
-            if df_ug.empty: 
-                st.warning("चुनी गई एलिजिबिलिटी के लिए कोई डेटा नहीं मिला।")
+            # 🎯 2. सिर्फ B.A, B.Com, B.Sc, B.Sc. (Home Science) का डेटा रखना (Case Insensitive)
+            allowed_degrees = ["b.a.", "b.a", "b.com.", "b.com", "b.sc.", "b.sc", "b.sc. (home science)", "b.sc (home science)"]
+            df_ug = df_ug[df_ug[deg_col].astype(str).str.strip().str.lower().isin(allowed_degrees)].reset_index(drop=True)
+            
+            if df_ug.empty:
+                st.warning("⚠️ चुनी गई एलिजिबिलिटी में B.A., B.Com., B.Sc. का कोई डेटा नहीं मिला।")
             else:
-                st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Unwanted Columns)")
-                all_cols = df_ug.columns.tolist()
-                cols_to_delete = st.multiselect("हटाने वाले कॉलम चुनें:", options=all_cols)
+                # 🎯 3. परमानेंट कॉलम डिलीट फीचर (बटन के साथ)
+                st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Columns)")
+                
+                # पहले से डिलीट किए गए कॉलम्स को हटाकर बाकी बचे कॉलम दिखाना
+                remaining_cols = [c for c in df_ug.columns if c not in st.session_state["deleted_cols"]]
+                df_ug = df_ug[remaining_cols]
+                
+                cols_to_delete = st.multiselect("हटाने वाले कॉलम स्क्रॉल लिस्ट से चुनें:", options=remaining_cols)
                 
                 if cols_to_delete:
-                    df_ug = df_ug.drop(columns=cols_to_delete)
+                    if st.button("🔴 चुने गए कॉलम हमेशा के लिए डिलीट करें"):
+                        st.session_state["deleted_cols"].extend(cols_to_delete)
+                        st.success(f"कॉलम डिलीट कर दिए गए!")
+                        st.rerun()
                 
+                # कॉम्बिनेशन बनाना
                 df_ug['combo'] = df_ug[deg_col].astype(str) + " - " + df_ug[br_col].astype(str)
                 u_combos = df_ug['combo'].unique().tolist()
                 
@@ -161,8 +169,6 @@ elif p == "💻 Work":
                 st.subheader("📊 3. लाइव वैरिफाइड UG डेटा टेबल")
                 display_df = df_ug.drop(columns=['combo'])
                 st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
-    else:
-        st.info("💡 कृपया काम शुरू करने के लिए ऊपर फ़ाइल अपलोड करें या 'Upload Panel' से डेटाबेस लोड करें।")
 
 # --- ADMIN PANEL ---
 elif p == "⚙️ Admin":
@@ -173,5 +179,7 @@ elif p == "⚙️ Admin":
     if del_p == "psv123" and st.button("🔴 मास्टर डेटाबेस साफ करें"):
         cursor.execute("DELETE FROM data_store")
         conn.commit()
+        st.session_state["deleted_cols"] = []
         st.success("डेटाबेस पूरी तरह साफ़ कर दिया गया है!")
         st.rerun()
+
