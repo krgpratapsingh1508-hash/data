@@ -7,7 +7,7 @@ import json
 st.set_page_config(page_title="NEP Data Validator Pro", layout="wide")
 
 # Database initialization
-conn = sqlite3.connect("nep_app_database.db", check_same_thread=False)
+conn = sqlite3.connect("nep_fixed_database.db", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS uploaded_data (
@@ -36,19 +36,11 @@ if not st.session_state["logged_in"]:
             if username == "-- यूज़र चुनें --":
                 st.error("कृपया स्क्रॉल लिस्ट से अपना नाम चुनें!")
             else:
-                is_valid = False
                 input_pass = str(password).strip().lower()
-                
-                if username == "Admin" and input_pass == "admin":
-                    is_valid = True
-                elif username == "Teacher_UG" and input_pass == "ug":
-                    is_valid = True
-                elif username == "Teacher_PG" and input_pass == "pg":
-                    is_valid = True
-                elif username == "Operator" and input_pass == "op":
-                    is_valid = True
-                
-                if is_valid:
+                if (username == "Admin" and input_pass == "admin") or \
+                   (username == "Teacher_UG" and input_pass == "ug") or \
+                   (username == "Teacher_PG" and input_pass == "pg") or \
+                   (username == "Operator" and input_pass == "op"):
                     st.session_state["logged_in"] = True
                     st.session_state["current_user"] = username
                     st.success(f"स्वागत है, {username}!")
@@ -73,7 +65,8 @@ def load_db_data():
     if rows:
         dfs = []
         for r in rows:
-            temp_df = pd.DataFrame(json.loads(r[0]))
+            data = json.loads(r[0])
+            temp_df = pd.DataFrame(data)
             temp_df['Course_Category'] = r[1]
             dfs.append(temp_df)
         return pd.concat(dfs, ignore_index=True)
@@ -120,7 +113,6 @@ if panel == "📥 Entry Panel (डेटा अपलोड)":
                 for _, row in df.iterrows():
                     val = str(row[selected_col]).lower()
                     is_pg = any(kw in val for kw in pg_list)
-                    is_ug = any(kw in val for kw in ug_list)
                     
                     row_dict = row.to_dict()
                     if is_pg:
@@ -136,6 +128,7 @@ if panel == "📥 Entry Panel (डेटा अपलोड)":
                 
                 st.success(f"🎉 डेटा सेव हो गया! (UG: {len(ug_rows)} रोज़, PG: {len(pg_rows)} रोज़)")
                 st.balloons()
+                st.rerun()
         except Exception as e:
             st.error(f"त्रुटि: {e}")
 
@@ -146,58 +139,61 @@ elif panel == "💻 Work Panel (नियम और वैलिडेशन)":
     full_df = load_db_data()
     
     if full_df is None:
-        st.info("ℹ️ डेटाबेस खाली है। कृपया पहले 'Entry Panel' में जाकर फ़ाइल अपलोड करें।")
+        st.info("ℹ️ डेटाबेस खाली है। कृपया पहले 'Entry Panel' में जाकर फ़ाइल अपलोड करें और '💾 डेटाबेस में सुरक्षित करें' बटन दबाएं।")
     else:
         tab_ug, tab_pg = st.tabs(["🎓 UNDERGRADUATE (UG) PANEL", "📜 POSTGRADUATE (PG) PANEL"])
         
         df_ug = full_df[full_df['Course_Category'] == 'UG'].drop(columns=['Course_Category']).reset_index(drop=True)
         df_pg = full_df[full_df['Course_Category'] == 'PG'].drop(columns=['Course_Category']).reset_index(drop=True)
         
-        # --- फंक्शन: डेटा वैलिडेशन और कलर कोडिंग ---
         def process_validation(df_panel, prefix):
-            st.subheader("⚙️ नियम सेट करें (Define Rules)")
-            st.write("चुनें कि किस Degree + Branch के लिए कौन-से सब्जेक्ट्स वैध (Valid) हैं:")
+            st.subheader("⚙️ 1. कॉलम की पहचान करें (Select Columns)")
             
-            col_deg = st.selectbox("Degree कॉलम चुनें:", df_panel.columns, key=f"{prefix}_c1")
-            col_br = st.selectbox("Branch/Subject कॉलम चुनें:", df_panel.columns, key=f"{prefix}_c2")
+            cols = st.columns(3)
+            with cols[0]:
+                col_deg = st.selectbox("Degree कॉलम:", df_panel.columns, key=f"{prefix}_c1")
+                col_br = st.selectbox("Branch/Subject कॉलम:", df_panel.columns, key=f"{prefix}_c2")
+            with cols[1]:
+                col_minor = st.selectbox("Minor Subject कॉलम:", df_panel.columns, key=f"{prefix}_m")
+                col_mdc = st.selectbox("MDC Subject कॉलम:", df_panel.columns, key=f"{prefix}_md")
+            with cols[2]:
+                col_voc = st.selectbox("Vocational Subject कॉलम:", df_panel.columns, key=f"{prefix}_v")
+                col_pw = st.selectbox("PW/Ap/CE Subject कॉलम:", df_panel.columns, key=f"{prefix}_p")
             
-            col_minor = st.selectbox("Minor Subject कॉलम चुनें:", df_panel.columns, key=f"{prefix}_m")
-            col_mdc = st.selectbox("MDC Subject कॉलम चुनें:", df_panel.columns, key=f"{prefix}_md")
-            col_voc = st.selectbox("Vocational Subject कॉलम चुनें:", df_panel.columns, key=f"{prefix}_v")
-            col_pw = st.selectbox("PW/Ap/CE Subject कॉलम चुनें:", df_panel.columns, key=f"{prefix}_p")
-            
-            # यूनिक कॉम्बिनेशन ढूंढना (जैसे B.Sc + Mathematics)
+            # कॉम्बिनेशन बनाना
             df_panel['combo'] = df_panel[col_deg].astype(str) + " - " + df_panel[col_br].astype(str)
             unique_combos = df_panel['combo'].unique().tolist()
             
+            st.divider()
+            st.subheader("📋 2. डिग्री और ब्रांच के हिसाब से सही विषयों की स्क्रॉल लिस्ट")
+            st.write("नीचे हर डिग्री के लिए सही विषय चुनें। यहाँ जो सिलेक्ट नहीं होगा वो नीचे टेबल में लाल हो जाएगा:")
+            
             rules = {}
-            st.markdown("#### हर डिग्रियों के लिए मान्य सब्जेक्ट्स की स्क्रॉल लिस्ट:")
             
-            with st.expander("👉 यहाँ क्लिक करके डिग्रियों के नियम सेट करें", expanded=True):
-                grid = st.columns(2)
-                for i, combo in enumerate(unique_combos):
-                    with grid[i % 2]:
-                        st.info(f"📍 **{combo}** के लिए नियम:")
-                        
-                        # हर कैटेगरी के लिए उपलब्ध यूनिक सब्जेक्ट्स की लिस्ट स्क्रॉल के लिए
-                        all_minors = df_panel[col_minor].dropna().unique().tolist()
-                        all_mdcs = df_panel[col_mdc].dropna().unique().tolist()
-                        all_vocs = df_panel[col_voc].dropna().unique().tolist()
-                        all_pws = df_panel[col_pw].dropna().unique().tolist()
-                        
-                        r_minor = st.multiselect(f"Valid Minor Subjects", options=all_minors, key=f"{prefix}_rm_{i}")
-                        r_mdc = st.multiselect(f"Valid MDC Subjects", options=all_mdcs, key=f"{prefix}_rmdc_{i}")
-                        r_voc = st.multiselect(f"Valid Vocational", options=all_vocs, key=f"{prefix}_rvoc_{i}")
-                        r_pw = st.multiselect(f"Valid PW/Ap/CE", options=all_pws, key=f"{prefix}_rpw_{i}")
-                        
-                        rules[combo] = {
-                            "minor": [str(x).strip().lower() for x in r_minor],
-                            "mdc": [str(x).strip().lower() for x in r_mdc],
-                            "voc": [str(x).strip().lower() for x in r_voc],
-                            "pw": [str(x).strip().lower() for x in r_pw]
-                        }
+            # बिना Expander के सीधा सामने लिस्ट दिखाने के लिए Grid Layout
+            grid = st.columns(2)
+            for i, combo in enumerate(unique_combos):
+                with grid[i % 2]:
+                    st.markdown(f"### 📍 {combo}")
+                    
+                    all_minors = df_panel[col_minor].dropna().unique().tolist()
+                    all_mdcs = df_panel[col_mdc].dropna().unique().tolist()
+                    all_vocs = df_panel[col_voc].dropna().unique().tolist()
+                    all_pws = df_panel[col_pw].dropna().unique().tolist()
+                    
+                    r_minor = st.multiselect(f"Valid Minors for {combo}", options=all_minors, key=f"{prefix}_rm_{i}")
+                    r_mdc = st.multiselect(f"Valid MDCs for {combo}", options=all_mdcs, key=f"{prefix}_rmdc_{i}")
+                    r_voc = st.multiselect(f"Valid Vocational for {combo}", options=all_vocs, key=f"{prefix}_rvoc_{i}")
+                    r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", options=all_pws, key=f"{prefix}_rpw_{i}")
+                    
+                    rules[combo] = {
+                        "minor": [str(x).strip().lower() for x in r_minor],
+                        "mdc": [str(x).strip().lower() for x in r_mdc],
+                        "voc": [str(x).strip().lower() for x in r_voc],
+                        "pw": [str(x).strip().lower() for x in r_pw]
+                    }
             
-            # सेल हाइलाइटिंग लॉजिक (Red for Wrong, Blue for Blank)
+            # स्टाइलर लॉजिक
             def cell_styler(dataframe):
                 style_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
                 target_cols = {col_minor: 'minor', col_mdc: 'mdc', col_voc: 'voc', col_pw: 'pw'}
@@ -209,44 +205,45 @@ elif panel == "💻 Work Panel (नियम और वैलिडेशन)":
                     for col_name, rule_key in target_cols.items():
                         cell_val = row[col_name]
                         
-                        # --- यहाँ से आपका कोड शुरू होता है ---
-                        # 1. अगर सेल खाली (Blank) है तो ब्लू कलर दें
+                        # 1. खाली सेल = नीला (Blue)
                         if pd.isna(cell_val) or str(cell_val).strip() == "":
                             style_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
                         else:
-                            # 2. अगर भरा हुआ है लेकिन नियमों से मैच नहीं करता तो रेड कलर दें
+                            # 2. गलत मैच = लाल (Red)
                             valid_list = current_rule[rule_key]
+                                                        # --- यहाँ से आपका कोड शुरू होता है ---
                             if valid_list and str(cell_val).strip().lower() not in valid_list:
                                 style_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
                 return style_df
             
             st.divider()
-            st.subheader("📊 लाइव वैरिफाइड डेटा टेबल:")
-            st.caption("🔵 नीला सेल = डेटा गायब (Blank) | 🔴 लाल सेल = गलत विषय (Mismatch Subject)")
+            st.subheader("📊 3. लाइव वैरिफाइड डेटा टेबल")
+            st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = विषय नियमों से मैच नहीं कर रहा है")
             
-            # टेम्परेरी कॉम्बिनेशन कॉलम को हटाकर टेबल दिखाना
+            # टेम्परेरी 'combo' कॉलम को हटाकर साफ टेबल दिखाना
             display_df = df_panel.drop(columns=['combo'])
             
-            # लाइव हाइलाइटेड डेटा टेबल स्क्रीन पर लोड करना
+            # लाइव कलर्ड (Red/Blue) डेटा टेबल को स्क्रीन पर दिखाना
             st.dataframe(
                 display_df.style.apply(cell_styler, axis=None), 
                 height=600, 
                 use_container_width=True
             )
             
-            # --- बोनस: गलत डेटा की समरी रिपोर्ट ---
-            error_count = 0
+            # --- बोनस: गलतियों का लाइव काउंटर ---
+            total_errors = 0
             for index, row in df_panel.iterrows():
                 combo_val = str(row[col_deg]) + " - " + str(row[col_br])
                 current_rule = rules.get(combo_val, {"minor":[], "mdc":[], "voc":[], "pw":[]})
                 for col_name, rule_key in {col_minor: 'minor', col_mdc: 'mdc', col_voc: 'voc', col_pw: 'pw'}.items():
                     cell_val = row[col_name]
                     if pd.isna(cell_val) or str(cell_val).strip() == "":
-                        error_count += 1
+                        total_errors += 1
                     elif current_rule[rule_key] and str(cell_val).strip().lower() not in current_rule[rule_key]:
-                        error_count += 1
-            
-            if error_count > 0:
-                st.warning(f"⚠️ इस शीट में कुल {error_count} जगह पर गलतियाँ (लाल/नीले सेल्स) मिली हैं।")
+                        total_errors += 1
+                        
+            if total_errors > 0:
+                st.error(f"🚨 ध्यान दें: इस शीट में कुल {total_errors} सेल्स नियमों के खिलाफ (या खाली) मिले हैं!")
             else:
-                st.success("🎉 बहुत बढ़िया! चुने गए नियमों के अनुसार सारा डेटा बिल्कुल सही है।")
+                st.success("🎉 बहुत बढ़िया! आपके सेट किए गए नियमों के अनुसार सारा डेटा बिल्कुल सही है।")
+
