@@ -97,20 +97,20 @@ elif p == "💻 Work":
             # 1. एलिजिबिलिटी फ़िल्टर
             df_ug = df[df[el_col].isin(st.session_state["ug_el"])].reset_index(drop=True)
             
-            # 🎯 2. बिल्कुल सटीक फ़िल्टर (ताकि B.A. LL.B. जैसी फालतू डिग्रियां पूरी तरह ब्लॉक हो जाएं)
-            def filter_strict_ug(val):
-                v = str(val).lower().replace(".", "").strip()
-                # केवल विशिष्ट डिग्रियों को अनुमति दें
-                if v in ["ba", "bcom", "bsc"] or "home science" in v:
-                    if "llb" in v or "law" in v: # सुरक्षा नेट: लॉ या एलएलबी हटाओ
-                        return False
+            # 🎯 2. आपकी बताई हुई 4 डिग्रियों के लिए बिल्कुल सटीक फ़िल्टर (Case Insensitive & Dot-Space Cleaned)
+            def filter_strict_ug_exact(val):
+                # नाम को साफ करना (स्पेस और डॉट हटाकर स्मॉल लेटर में बदलना)
+                v = str(val).lower().replace(".", "").replace(" ", "").strip()
+                
+                # सटीक मिलान: bcom, ba, bhsc, bsc
+                if v in ["bcom", "ba", "bhsc", "bsc"]:
                     return True
                 return False
                 
-            df_ug = df_ug[df_ug[deg_col].apply(filter_strict_ug)].reset_index(drop=True)
+            df_ug = df_ug[df_ug[deg_col].apply(filter_strict_ug_exact)].reset_index(drop=True)
             
             if df_ug.empty:
-                st.error("⚠️ चुनी गई एलिजिबिलिटी में निर्दिष्ट UG डिग्रियां (B.A., B.Com., B.Sc.) नहीं मिलीं।")
+                st.error("⚠️ चुनी गई एलिजिबिलिटी में निर्दिष्ट UG डिग्रियां (B. Com., B. A., B. H. Sc., B. Sc.) नहीं मिलीं।")
             else:
                 # 3. परमानेंट कॉलम डिलीट फीचर
                 st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Columns)")
