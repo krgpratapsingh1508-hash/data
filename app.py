@@ -1,78 +1,100 @@
 import streamlit as st
 import pandas as pd
 
-# Page configuration
+# Page configuration - पूरे स्क्रीन का इस्तेमाल करने के लिए
 st.set_page_config(page_title="Data Validation System", layout="wide")
 
-st.title("📊 Data Validation & Error Detector")
-st.write("अपनी फ़ाइल अपलोड करें, स्क्रॉल लिस्ट से गलत (Missing Data) वाले कॉलम चुनें और तुरंत रिपोर्ट देखें।")
+st.title("📊 Columns Manager & Data Validation System")
+st.write("फ़ाइल अपलोड करें, लिस्ट से कॉलम चुनें और अपनी पूरी डेटा टेबल के साथ मैच करें।")
 
-# 1. File Upload Component
+# 1. File Upload
 uploaded_file = st.file_uploader("CSV या Excel फ़ाइल अपलोड करें", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
     try:
-        # File type checking
+        # File type loading
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
             
-        st.success("फ़ाइल सफलतापूर्वक अपलोड हो गई है!")
+        st.success("फ़ाइल लोड हो गई है!")
         
-        # Display Original Data
-        st.subheader("📋 आपका अपलोड किया गया डेटा (शुरुआती 20 रो):")
-        st.dataframe(df.head(20))
+        # 2. Side-by-Side Layout (बाएं तरफ लिस्ट, दाएं तरफ पूरा डेटा)
+        layout_col1, layout_col2 = st.columns([1, 2]) # 1:2 का रेशियो
         
-        st.divider()
-        
-        # 2. Scroll List (Multiselect Box) for selecting wrong columns
-        st.subheader("🔍 गलत डेटा वाले कॉलम चुनें")
         columns_list = df.columns.tolist()
         
-        # यह वो स्क्रॉल लिस्ट है जहाँ आप एक ही बार में कई कॉलम चुन सकते हैं
-        wrong_columns = st.multiselect(
-            "नीचे दी गई लिस्ट में से उन कॉलम्स को चुनें जिनमें खाली (Missing/Null) डेटा नहीं होना चाहिए:",
-            options=columns_list,
-            placeholder="यहाँ क्लिक करके कॉलम चुनें..."
-        )
-        
+        with layout_col1:
+            st.subheader("⚙️ गलत कॉलम चुनें")
+            # स्क्रॉल लिस्ट जिससे आप सीधे कॉलम सिलेक्ट करेंगे
+            wrong_columns = st.multiselect(
+                "डेटा देखकर बताएं कौन से कॉलम गलत हैं:",
+                options=columns_list,
+                placeholder="यहाँ से कॉलम चुनें..."
+            )
+            
+            # शॉर्टकट बटन: सब सिलेक्ट करने या क्लियर करने के लिए
+            if st.button("❌ सारे सिलेक्शन हटाएं"):
+                st.rerun()
+
+        with layout_col2:
+            st.subheader("📋 आपकी पूरी डेटा टेबल")
+            
+            # अगर आपने कोई कॉलम चुना है, तो टेबल में उस कॉलम को हाईलाइट (Highlight) करने का फीचर
+            if wrong_columns:
+                def highlight_cols(s):
+                    if s.name in wrong_columns:
+                        return ['background-color: #ffcccc; color: black'] * len(s) # गलत कॉलम लाल दिखेगा
+                    return [''] * len(s)
+                
+                # हाईलाइटेड टेबल दिखाना
+                st.dataframe(df.style.apply(highlight_cols, axis=0), height=400, use_container_width=True)
+            else:
+                # नॉर्मल टेबल दिखाना
+                st.dataframe(df, height=400, use_container_width=True)
+
         st.divider()
         
-        # 3. Dynamic Validation Process
+        # 3. एरर डिटेक्शन और रिपोर्ट जनरेशन (नीचे दिखेगा)
         if wrong_columns:
-            st.subheader("🔴 मिली हुई गलतियों की रिपोर्ट:")
+            st.subheader("🚨 चुने गए गलत कॉलम्स की एरर रिपोर्ट")
             
             error_records = []
             
-            # सिर्फ चुने हुए कॉलम्स में चेकिंग
+            # सिर्फ सिलेक्टेड कॉलम्स में चेकिंग (खाली या गलत डेटा के लिए)
             for index, row in df.iterrows():
                 for col in wrong_columns:
                     val = row[col]
                     
-                    # चेक कर रहा है कि डेटा खाली, NaN या सिर्फ स्पेस तो नहीं है
+                    # कंडीशन: अगर डेटा खाली (NaN) है या कोई स्पेसिफिक गलत एंट्री है
                     if pd.isna(val) or str(val).strip() == "":
                         error_records.append({
-                            "Excel Row Number": index + 2, # Excel format row counting
+                            "Excel Row Number": index + 2, # एक्सेल शीट के हिसाब से रो नंबर
                             "Column Name": col,
-                            "Status": "डेटा गायब (Missing/Null) है"
+                            "Current Value": "❌ खाली (Missing Data)",
+                            "Issue": "इस कॉलम को आपने गलत मार्क किया है और इसमें डेटा गायब है।"
+                        })
+                    else:
+                        # अगर डेटा मौजूद है पर आपने कॉलम को गलत बोला है
+                        error_records.append({
+                            "Excel Row Number": index + 2,
+                            "Column Name": col,
+                            "Current Value": val,
+                            "Issue": "इस कॉलम में डेटा है, पर आपने इसे 'गलत कॉलम' लिस्ट में चुना है।"
                         })
             
-            # अगर गलतियां मिलती हैं
-            if len(error_records) > 0:
+            # रिपोर्ट को टेबल फॉर्मेट में दिखाना
+            if error_records:
                 error_df = pd.DataFrame(error_records)
-                st.error(f"आपके चुने गए कॉलम्स में कुल {len(error_df)} जगह पर डेटा गलत/खाली मिला!")
-                
-                # एरर डेटा टेबल दिखाएं
+                st.error(f"चुने गए कॉलम्स में कुल {len(error_df)} संदिग्ध एंट्रीज (Entries) मिलीं!")
                 st.dataframe(error_df, use_container_width=True)
                 
                 # डाउनलोड बटन
                 csv_error = error_df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 एरर रिपोर्ट डाउनलोड करें", csv_error, "missing_data_report.csv", "text/csv")
-            else:
-                st.success("🎉 बहुत बढ़िया! आपके चुने हुए कॉलम्स में कोई भी डेटा खाली या गलत नहीं है।")
+                st.download_button("📥 यह एरर रिपोर्ट डाउनलोड करें", csv_error, "column_error_report.csv", "text/csv")
         else:
-            st.info("💡 ऊपर दी गई स्क्रॉल लिस्ट में से कम से कम एक कॉलम चुनें ताकि हम चेकिंग शुरू कर सकें।")
+            st.info("💡 बाईं तरफ (Left Side) की लिस्ट से कॉलम चुनें। चुनते ही दाईं तरफ की टेबल में वो कॉलम हाईलाइट हो जाएगा।")
                 
     except Exception as e:
-        st.error(f"फ़ाइल पढ़ने में कोई समस्या आई: {e}")
+        st.error(f"फ़ाइल प्रोसेस करने में एरर: {e}")
