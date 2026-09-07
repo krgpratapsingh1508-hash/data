@@ -18,33 +18,52 @@ cursor.execute("""
 """)
 conn.commit()
 
+# ==========================================
+# पुराने कोड में यहाँ से बदलाव करें
+# ==========================================
+
 # --- 1. LOGIN SYSTEM ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
+    st.session_state["current_user"] = ""
 
 if not st.session_state["logged_in"]:
     st.title("🔒 Login System")
+    
+    # 📝 यहाँ आप जितने चाहें उतने नाम जोड़ सकते हैं, ये स्क्रॉल लिस्ट में दिखेंगे
+    users_list = ["-- यूज़र चुनें --", "Admin", "Teacher_UG", "Teacher_PG", "Operator"]
+    
     with st.form("login_form"):
-        username = st.text_input("Username")
+        # 🎯 यूज़रनेम इनपुट को स्क्रॉल लिस्ट (Dropdown) बना दिया गया है
+        username = st.selectbox("अपना Username चुनें:", options=users_list)
+        
         password = st.text_input("Password", type="password")
         submit = st.form_submit_button("Login")
         
         if submit:
-            # आप अपना यूज़रनेम और पासवर्ड यहाँ बदल सकते हैं
-            if username == "admin" and password == "admin123":
-                st.session_state["logged_in"] = True
-                st.success("सफलतापूर्वक लॉगिन हो गए!")
-                st.rerun()
+            if username == "-- यूज़र चुनें --":
+                st.error("कृपया स्क्रॉल लिस्ट से अपना नाम चुनें!")
             else:
-                st.error("गलत यूज़रनेम या पासवर्ड!")
+                # 🔑 सुरक्षा नियम: नाम कोई भी हो, पासवर्ड 'admin123' होना चाहिए
+                if password == "admin123":
+                    st.session_state["logged_in"] = True
+                    st.session_state["current_user"] = username
+                    st.success(f"स्वागत है, {username}!")
+                    st.rerun()
+                else:
+                    st.error("गलत पासवर्ड! कृपया सही पासवर्ड डालें।")
     st.stop()
 
-# --- LOGOUT BUTTON ---
-st.sidebar.markdown(f"**Logged in as: Admin**")
+# --- LOGOUT & USER INFO (साइडबार में नाम दिखाने के लिए) ---
+st.sidebar.markdown(f"👤 **Logged in as:** `{st.session_state['current_user']}`")
 if st.sidebar.button("Logout 🏃‍♂️"):
     st.session_state["logged_in"] = False
+    st.session_state["current_user"] = ""
     st.rerun()
 
+# ==========================================
+# इसके नीचे आपका पुराना PANEL NAVIGATION वाला कोड वैसे ही रहेगा
+# ==========================================
 # --- 2. PANEL NAVIGATION ---
 panel = st.sidebar.radio("पैनल चुनें (Select Panel)", ["📥 Entry Panel (डेटा अपलोड)", "💻 Work Panel (गलती चेकिंग)"])
 
