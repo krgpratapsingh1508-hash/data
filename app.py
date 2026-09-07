@@ -39,7 +39,7 @@ def get_db():
     try:
         cursor.execute("SELECT js FROM data_store ORDER BY id DESC LIMIT 1")
         r = cursor.fetchone()
-        if r: return pd.read_json(r[0], orient="split")
+        if r: return pd.read_json(r, orient="split")
     except Exception: return None
     return None
 
@@ -52,7 +52,7 @@ if p == "📥 Upload":
             df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
             cursor.execute("INSERT INTO data_store (js) VALUES (?)", (df.to_json(orient="split"),))
             conn.commit()
-            st.session_state["deleted_cols"] = [] # नया अपलोड होने पर डिलीटेड लिस्ट रीसेट
+            st.session_state["deleted_cols"] = [] 
             st.success("⚡ डेटा सुरक्षित सेव हो गया!")
         except Exception as e: st.error(f"समस्या: {e}")
 
@@ -71,9 +71,9 @@ elif p == "💻 Work":
             
     if df is not None and not df.empty:
         # आवश्यक कॉलम्स खोजना
-        el_col = next((c for c in df.columns if 'elig' in c.lower() or 'qual' in c.lower()), df.columns[0])
-        deg_col = next((c for c in df.columns if 'deg' in c.lower() or 'course' in c.lower()), df.columns[0])
-        br_col = next((c for c in df.columns if 'branch' in c.lower() or 'stream' in c.lower() or 'subject' in c.lower()), df.columns[0])
+        el_col = next((c for c in df.columns if 'elig' in c.lower() or 'qual' in c.lower()), df.columns)
+        deg_col = next((c for c in df.columns if 'deg' in c.lower() or 'course' in c.lower()), df.columns)
+        br_col = next((c for c in df.columns if 'branch' in c.lower() or 'stream' in c.lower() or 'subject' in c.lower()), df.columns)
         
         minor_col = next((c for c in df.columns if 'minor' in c.lower()), None)
         mdc_col = next((c for c in df.columns if 'mdc' in c.lower()), None)
@@ -97,17 +97,23 @@ elif p == "💻 Work":
             # 1. एलिजिबिलिटी फ़िल्टर
             df_ug = df[df[el_col].isin(st.session_state["ug_el"])].reset_index(drop=True)
             
-            # 🎯 2. सिर्फ B.A, B.Com, B.Sc, B.Sc. (Home Science) का डेटा रखना (Case Insensitive)
-            allowed_degrees = ["b.a.", "b.a", "b.com.", "b.com", "b.sc.", "b.sc", "b.sc. (home science)", "b.sc (home science)"]
-            df_ug = df_ug[df_ug[deg_col].astype(str).str.strip().str.lower().isin(allowed_degrees)].reset_index(drop=True)
+            # 🎯 2. स्मार्ट कीवर्ड मैचिंग (B.A, B.Com, B.Sc ढूंढने के लिए)
+            def filter_ug_degrees(val):
+                v = str(val).lower().replace(".", "").strip()
+                # अगर टेक्स्ट में इनमें से कुछ भी अंश है तो सही मानें
+                if "ba" in v or "bcom" in v or "bsc" in v or "arts" in v or "commerce" in v or "science" in v:
+                    return True
+                return False
+                
+            df_ug = df_ug[df_ug[deg_col].apply(filter_ug_degrees)].reset_index(drop=True)
             
             if df_ug.empty:
-                st.warning("⚠️ चुनी गई एलिजिबिलिटी में B.A., B.Com., B.Sc. का कोई डेटा नहीं मिला।")
+                st.error("⚠️ चुनी गई एलिजिबिलिटी के डेटा में कोई भी UG डिग्री (B.A/B.Sc/B.Com) मैच नहीं हो पा रही है।")
+                st.info(f"आपके डिग्री वाले कॉलम `{deg_col}` में ये नाम लिखे हैं: {df[deg_col].dropna().unique().tolist()}")
             else:
-                # 🎯 3. परमानेंट कॉलम डिलीट फीचर (बटन के साथ)
+                # 3. परमानेंट कॉलम डिलीट फीचर
                 st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Columns)")
                 
-                # पहले से डिलीट किए गए कॉलम्स को हटाकर बाकी बचे कॉलम दिखाना
                 remaining_cols = [c for c in df_ug.columns if c not in st.session_state["deleted_cols"]]
                 df_ug = df_ug[remaining_cols]
                 
@@ -182,4 +188,3 @@ elif p == "⚙️ Admin":
         st.session_state["deleted_cols"] = []
         st.success("डेटाबेस पूरी तरह साफ़ कर दिया गया है!")
         st.rerun()
-
