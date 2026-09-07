@@ -22,7 +22,7 @@ conn.commit()
 # पुराने कोड में यहाँ से बदलाव करें
 # ==========================================
 
-# --- 1. LOGIN SYSTEM ---
+# --- 1. LOGIN SYSTEM WITH UNIQUE PASSWORDS ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
     st.session_state["current_user"] = ""
@@ -30,13 +30,22 @@ if "logged_in" not in st.session_state:
 if not st.session_state["logged_in"]:
     st.title("🔒 Login System")
     
-    # 📝 यहाँ आप जितने चाहें उतने नाम जोड़ सकते हैं, ये स्क्रॉल लिस्ट में दिखेंगे
-    users_list = ["-- यूज़र चुनें --", "Admin", "Teacher_UG", "Teacher_PG", "Operator"]
+    # हर यूज़र का अलग पासवर्ड यहाँ डिफाइन किया गया है (डिक्शनरी फ़ॉर्मेट में)
+    user_credentials = {
+        "Admin": "admin@2026",
+        "Teacher_UG": "ugpass123",
+        "Teacher_PG": "pgpass123",
+        "Operator": "oppass999"
+    }
+    
+    # स्क्रॉल लिस्ट के लिए नाम (पहला ऑप्शन खाली रखने के लिए)
+    users_list = ["-- यूज़र चुनें --"] + list(user_credentials.keys())
     
     with st.form("login_form"):
-        # 🎯 यूज़रनेम इनपुट को स्क्रॉल लिस्ट (Dropdown) बना दिया गया है
+        # Username स्क्रॉल लिस्ट
         username = st.selectbox("अपना Username चुनें:", options=users_list)
         
+        # पासवर्ड इनपुट
         password = st.text_input("Password", type="password")
         submit = st.form_submit_button("Login")
         
@@ -44,8 +53,10 @@ if not st.session_state["logged_in"]:
             if username == "-- यूज़र चुनें --":
                 st.error("कृपया स्क्रॉल लिस्ट से अपना नाम चुनें!")
             else:
-                # 🔑 सुरक्षा नियम: नाम कोई भी हो, पासवर्ड 'admin123' होना चाहिए
-                if password == "admin123":
+                # सही पासवर्ड मैच करने की चेकिंग
+                correct_password = user_credentials[username]
+                
+                if password == correct_password:
                     st.session_state["logged_in"] = True
                     st.session_state["current_user"] = username
                     st.success(f"स्वागत है, {username}!")
@@ -54,7 +65,7 @@ if not st.session_state["logged_in"]:
                     st.error("गलत पासवर्ड! कृपया सही पासवर्ड डालें।")
     st.stop()
 
-# --- LOGOUT & USER INFO (साइडबार में नाम दिखाने के लिए) ---
+# --- LOGOUT & USER INFO ---
 st.sidebar.markdown(f"👤 **Logged in as:** `{st.session_state['current_user']}`")
 if st.sidebar.button("Logout 🏃‍♂️"):
     st.session_state["logged_in"] = False
