@@ -4,16 +4,16 @@ import sqlite3
 import json
 
 # Page configuration
-st.set_page_config(page_title="NEP Data Validator Pro", layout="wide")
+st.set_page_config(page_title="NEP Multi-Panel Validator Pro", layout="wide")
 
 # Database initialization
-conn = sqlite3.connect("nep_fixed_database.db", check_same_thread=False)
+conn = sqlite3.connect("nep_final_secure_db.db", check_same_thread=False)
 cursor = conn.cursor()
+# सिंगल टेबल जिसमें ऑपरेटर का रॉ डेटा सेव रहेगा
 cursor.execute("""
-    CREATE TABLE IF NOT EXISTS uploaded_data (
+    CREATE TABLE IF NOT EXISTS raw_uploaded_data (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        data_json TEXT,
-        course_type TEXT
+        data_json TEXT
     )
 """)
 conn.commit()
@@ -36,17 +36,28 @@ if not st.session_state["logged_in"]:
             if username == "-- यूज़र चुनें --":
                 st.error("कृपया स्क्रॉल लिस्ट से अपना नाम चुनें!")
             else:
-                input_pass = str(password).strip().lower()
-                if (username == "Admin" and input_pass == "admin") or \
-                   (username == "Teacher_UG" and input_pass == "ug") or \
-                   (username == "Teacher_PG" and input_pass == "pg") or \
-                   (username == "Operator" and input_pass == "op"):
+                input_pass = str(password).strip() # नो लोअरकेस ताकि 'psv123' जैसा ही रहे
+                
+                # आपके स्पेशल पासवर्ड 'psv123' के साथ मैचिंग
+                if username == "Admin" and input_pass == "psv123":
                     st.session_state["logged_in"] = True
-                    st.session_state["current_user"] = username
-                    st.success(f"स्वागत है, {username}!")
+                    st.session_state["current_user"] = "Admin"
+                    st.success("स्वागत है एडमिन!")
+                    st.rerun()
+                elif username == "Teacher_UG" and input_pass == "ug":
+                    st.session_state["logged_in"] = True
+                    st.session_state["current_user"] = "Teacher_UG"
+                    st.rerun()
+                elif username == "Teacher_PG" and input_pass == "pg":
+                    st.session_state["logged_in"] = True
+                    st.session_state["current_user"] = "Teacher_PG"
+                    st.rerun()
+                elif username == "Operator" and input_pass == "op":
+                    st.session_state["logged_in"] = True
+                    st.session_state["current_user"] = "Operator"
                     st.rerun()
                 else:
-                    st.error(f"❌ '{username}' के लिए गलत पासवर्ड डाला है!")
+                    st.error("❌ गलत पासवर्ड! कृपया सही पासवर्ड डालें।")
     st.stop()
 
 # --- LOGOUT & USER INFO ---
@@ -56,37 +67,34 @@ if st.sidebar.button("Logout 🏃‍♂️"):
     st.session_state["current_user"] = ""
     st.rerun()
 
-# --- 2. PANEL NAVIGATION ---
-panel = st.sidebar.radio("पैनल चुनें (Select Panel)", ["📥 Entry Panel (डेटा अपलोड)", "💻 Work Panel (नियम और वैलिडेशन)"])
+# --- 2. DYNAMIC PANEL PERMISSIONS BASED ON USER ---
+current_user = st.session_state["current_user"]
 
-def load_db_data():
-    cursor.execute("SELECT data_json, course_type FROM uploaded_data")
-    rows = cursor.fetchall()
-    if rows:
-        dfs = []
-        for r in rows:
-            data = json.loads(r[0])
-            temp_df = pd.DataFrame(data)
-            temp_df['Course_Category'] = r[1]
-            dfs.append(temp_df)
-        return pd.concat(dfs, ignore_index=True)
+# यूजर के हिसाब से कौन से पैनल दिखने चाहिए
+if current_user == "Admin":
+    available_panels = ["📥 Entry Panel (डेटा अपलोड)", "💻 Work Panel (नियम और वैलिडेशन)", "⚙️ Admin Panel (मैनेजमेंट)"]
+elif current_user == "Operator":
+    available_panels = ["📥 Entry Panel (डेटा अपलोड)"]
+else: # Teachers
+    available_panels = ["💻 Work Panel (नियम और वैलिडेशन)"]
+
+panel = st.sidebar.radio("पैनल चुनें (Select Panel)", available_panels)
+
+# Helper function to load raw data
+def load_raw_db_data():
+    cursor.execute("SELECT data_json FROM raw_uploaded_data ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    if row:
+        return pd.DataFrame(json.loads(row[0]))
     return None
 
-# --- PANEL 1: ENTRY PANEL ---
+
+# --- PANEL 1: ENTRY PANEL (सिर्फ अपलोड करने के लिए) ---
 if panel == "📥 Entry Panel (डेटा अपलोड)":
-    st.title("📥 Entry Panel - एक्सेल/CSV डेटाबेस")
-    st.write("यहाँ डेटा अपलोड करें। आफ्टर 12थ (BA, BCom, BSc) ऑटोमैटिक UG में और आफ्टर ग्रेजुएशन (MA, MCom, MSc) PG में चले जाएंगे।")
+    st.title("📥 Entry Panel - डेटा अपलोड")
+    st.write("यहाँ एक्सेल या सीएसवी फ़ाइल अपलोड करें। यह डेटा सुरक्षित एडमिन डेटाबेस में सेव हो जाएगा।")
     
-    current_data = load_db_data()
-    if current_data is not None:
-        st.warning(f"⚠️ डेटाबेस में पहले से डेटा सुरक्षित है।")
-        if st.button("🗑️ पुराना सारा डेटा डिलीट करें"):
-            cursor.execute("DELETE FROM uploaded_data")
-            conn.commit()
-            st.success("डेटाबेस खाली कर दिया गया है! अब आप नई लिस्ट अपलोड कर सकते हैं।")
-            st.rerun()
-            
-    uploaded_file = st.file_uploader("अपनी मुख्य डेटा लिस्ट (Excel/CSV) अपलोड करें", type=["csv", "xlsx"])
+    uploaded_file = st.file_uploader("अपनी फ़ाइल चुनें", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
         try:
@@ -95,172 +103,106 @@ if panel == "📥 Entry Panel (डेटा अपलोड)":
             else:
                 df = pd.read_excel(uploaded_file)
                 
-            st.subheader("📋 अपलोडेड डेटा प्रीव्यू (शुरुआती 10 रो):")
-            st.dataframe(df.head(10))
+            st.success(f"फ़ाइल सफलतापूर्वक रीड कर ली गई है ({len(df)} रोज़)!")
             
-            st.divider()
-            st.subheader("🎯 UG / PG स्मार्ट विभाजन सेटिंग्स")
-            selected_col = st.selectbox("वह कॉलम चुनें जिसमें कोर्स या डिग्री का नाम लिखा है (जैसे Degree, Course, Class):", df.columns)
-            
-            # डिफ़ॉल्ट कीवर्ड्स आपके नियम के अनुसार सेट कर दिए हैं
-            ug_keywords = st.text_input("UG की पहचान के लिए कोर्स के नाम (कमा से अलग करें):", "BA, B.A, BCOM, B.COM, BSC, B.SC, BTECH, B.TECH, BCA, BBA, UG")
-            pg_keywords = st.text_input("PG की पहचान के लिए कोर्स के नाम (कमा से अलग करें):", "MA, M.A, MCOM, M.COM, MSC, M.SC, MTECH, M.TECH, MBA, MCA, PG")
-            
-            if st.button("💾 डेटाबेस में विभाजित करके सुरक्षित करें"):
-                # कीवर्ड्स को साफ और छोटे अक्षरों में बदलना
-                ug_list = [x.strip().lower() for x in ug_keywords.split(",")]
-                pg_list = [x.strip().lower() for x in pg_keywords.split(",")]
-                
-                ug_rows, pg_rows = [], []
-                
-                for _, row in df.iterrows():
-                    val = str(row[selected_col]).strip().lower()
-                    
-                    # स्मार्ट चेक 1: क्या कीवर्ड मैच हो रहा है?
-                    is_pg = any(kw in val for kw in pg_list)
-                    is_ug = any(kw in val for kw in ug_list)
-                    
-                    # स्मार्ट चेक 2: अगर कीवर्ड मिस हो जाए, तो 'm' से शुरू होने वाले मास्टर कोर्स PG और 'b' वाले UG
-                    if not is_pg and not is_ug:
-                        if val.startswith('m'):
-                            is_pg = True
-                        elif val.startswith('b'):
-                            is_ug = True
-                    
-                    row_dict = row.to_dict()
-                    
-                    # डेटा को अलग-अलग बकेट में डालना
-                    if is_pg:
-                        pg_rows.append(row_dict)
-                    else:
-                        # अगर कुछ मैच न हो तो उसे डिफ़ॉल्ट UG (After 12th) मान लिया जाएगा
-                        ug_rows.append(row_dict)
-                
-                # SQLite डेटाबेस में सेव करना
-                if ug_rows:
-                    cursor.execute("INSERT INTO uploaded_data (data_json, course_type) VALUES (?, ?)", (json.dumps(ug_rows), "UG"))
-                if pg_rows:
-                    cursor.execute("INSERT INTO uploaded_data (data_json, course_type) VALUES (?, ?)", (json.dumps(pg_rows), "PG"))
+            if st.button("💾 एडमिन डेटाबेस में सेव करें"):
+                # JSON फ़ॉर्मेट में कनवर्ट करके SQLite में डालना
+                data_json = df.to_json(orient="records")
+                cursor.execute("INSERT INTO raw_uploaded_data (data_json) VALUES (?)", (data_json,))
                 conn.commit()
-                
-                st.success(f"🎉 विभाजन सफल! UG (After 12th) में {len(ug_rows)} छात्र और PG (After Graduation) में {len(pg_rows)} छात्र सेव हुए।")
+                st.success("🎉 डेटा एडमिन के डेटाबेस में सुरक्षित सेव हो गया है!")
                 st.balloons()
-                st.rerun()
         except Exception as e:
-            st.error(f"फ़ाइल प्रोसेस करने में त्रुटि आई: {e}")
+            st.error(f"त्रुटि: {e}")
 
-# --- PANEL 2: WORK PANEL ---
+
+# --- PANEL 2: WORK PANEL (स्क्रॉल लिस्ट से एलिजिबिलिटी और यूजी/पीजी फिल्टर) ---
 elif panel == "💻 Work Panel (नियम और वैलिडेशन)":
-    st.title("💻 Work Panel - विषय मिलान और वैलिडेशन")
+    st.title("💻 Work Panel - एलिजिबिलिटी चेकिंग और वर्गीकरण")
     
-    full_df = load_db_data()
+    df_raw = load_raw_db_data()
     
-    if full_df is None:
-        st.info("ℹ️ डेटाबेस खाली है। कृपया पहले 'Entry Panel' में जाकर फ़ाइल अपलोड करें और '💾 डेटाबेस में सुरक्षित करें' बटन दबाएं।")
+    if df_raw is None:
+        st.info("ℹ️ अभी डेटाबेस में कोई डेटा उपलब्ध नहीं है। कृपया ऑपरेटर से फ़ाइल अपलोड करवाएं।")
     else:
-        tab_ug, tab_pg = st.tabs(["🎓 UNDERGRADUATE (UG) PANEL", "📜 POSTGRADUATE (PG) PANEL"])
-        
-        df_ug = full_df[full_df['Course_Category'] == 'UG'].drop(columns=['Course_Category']).reset_index(drop=True)
-        df_pg = full_df[full_df['Course_Category'] == 'PG'].drop(columns=['Course_Category']).reset_index(drop=True)
-        
-        def process_validation(df_panel, prefix):
-            st.subheader("⚙️ 1. कॉलम की पहचान करें (Select Columns)")
-            
-            cols = st.columns(3)
-            with cols[0]:
-                col_deg = st.selectbox("Degree कॉलम:", df_panel.columns, key=f"{prefix}_c1")
-                col_br = st.selectbox("Branch/Subject कॉलम:", df_panel.columns, key=f"{prefix}_c2")
-            with cols[1]:
-                col_minor = st.selectbox("Minor Subject कॉलम:", df_panel.columns, key=f"{prefix}_m")
-                col_mdc = st.selectbox("MDC Subject कॉलम:", df_panel.columns, key=f"{prefix}_md")
-            with cols[2]:
-                col_voc = st.selectbox("Vocational Subject कॉलम:", df_panel.columns, key=f"{prefix}_v")
-                col_pw = st.selectbox("PW/Ap/CE Subject कॉलम:", df_panel.columns, key=f"{prefix}_p")
-            
-            # कॉम्बिनेशन बनाना
-            df_panel['combo'] = df_panel[col_deg].astype(str) + " - " + df_panel[col_br].astype(str)
-            unique_combos = df_panel['combo'].unique().tolist()
-            
-            st.divider()
-            st.subheader("📋 2. डिग्री और ब्रांच के हिसाब से सही विषयों की स्क्रॉल लिस्ट")
-            st.write("नीचे हर डिग्री के लिए सही विषय चुनें। यहाँ जो सिलेक्ट नहीं होगा वो नीचे टेबल में लाल हो जाएगा:")
-            
-            rules = {}
-            
-            # बिना Expander के सीधा सामने लिस्ट दिखाने के लिए Grid Layout
-            grid = st.columns(2)
-            for i, combo in enumerate(unique_combos):
-                with grid[i % 2]:
-                    st.markdown(f"### 📍 {combo}")
-                    
-                    all_minors = df_panel[col_minor].dropna().unique().tolist()
-                    all_mdcs = df_panel[col_mdc].dropna().unique().tolist()
-                    all_vocs = df_panel[col_voc].dropna().unique().tolist()
-                    all_pws = df_panel[col_pw].dropna().unique().tolist()
-                    
-                    r_minor = st.multiselect(f"Valid Minors for {combo}", options=all_minors, key=f"{prefix}_rm_{i}")
-                    r_mdc = st.multiselect(f"Valid MDCs for {combo}", options=all_mdcs, key=f"{prefix}_rmdc_{i}")
-                    r_voc = st.multiselect(f"Valid Vocational for {combo}", options=all_vocs, key=f"{prefix}_rvoc_{i}")
-                    r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", options=all_pws, key=f"{prefix}_rpw_{i}")
-                    
-                    rules[combo] = {
-                        "minor": [str(x).strip().lower() for x in r_minor],
-                        "mdc": [str(x).strip().lower() for x in r_mdc],
-                        "voc": [str(x).strip().lower() for x in r_voc],
-                        "pw": [str(x).strip().lower() for x in r_pw]
-                    }
-            
-            # स्टाइलर लॉजिक
-            def cell_styler(dataframe):
-                style_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
-                target_cols = {col_minor: 'minor', col_mdc: 'mdc', col_voc: 'voc', col_pw: 'pw'}
+        # एलिजिबिलिटी कॉलम ढूंढना
+        eligibility_col = None
+        for col in df_raw.columns:
+            if 'eligibility' in col.lower() or 'elig' in col.lower() or 'qualification' in col.lower():
+                eligibility_col = col
+                break
                 
-                for index, row in dataframe.iterrows():
-                    combo_val = str(row[col_deg]) + " - " + str(row[col_br])
-                    current_rule = rules.get(combo_val, {"minor":[], "mdc":[], "voc":[], "pw":[]})
-                    
-                    for col_name, rule_key in target_cols.items():
-                        cell_val = row[col_name]
-                        
-                        # 1. खाली सेल = नीला (Blue)
-                        if pd.isna(cell_val) or str(cell_val).strip() == "":
-                            style_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-                        else:
-                            # 2. गलत मैच = लाल (Red)
-                            valid_list = current_rule[rule_key]
-                                                        # --- यहाँ से आपका कोड शुरू होता है ---
-                            if valid_list and str(cell_val).strip().lower() not in valid_list:
-                                style_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
-                return style_df
+        if not eligibility_col:
+            eligibility_col = st.selectbox("एलिजिबिलिटी (Eligibility) वाला कॉलम मैनुअली चुनें:", df_raw.columns)
             
-            st.divider()
-            st.subheader("📊 3. लाइव वैरिफाइड डेटा टेबल")
-            st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = विषय नियमों से मैच नहीं कर रहा है")
-            
-            # टेम्परेरी 'combo' कॉलम को हटाकर साफ टेबल दिखाना
-            display_df = df_panel.drop(columns=['combo'])
-            
-            # लाइव कलर्ड (Red/Blue) डेटा टेबल को स्क्रीन पर दिखाना
-            st.dataframe(
-                display_df.style.apply(cell_styler, axis=None), 
-                height=600, 
-                use_container_width=True
+        # एलिजिबिलिटी कॉलम की सभी यूनिक वैल्यूज निकालना स्क्रॉल लिस्ट के लिए
+        unique_eligibilities = df_raw[eligibility_col].dropna().unique().tolist()
+        
+        st.subheader("⚙️ एलिजिबिलिटी रूल्स सेट करें")
+        st.write("नीचे दी गई दो स्क्रॉल लिस्ट में से चुनें कि कौन सी एलिजिबिलिटी किस पैनल (UG/PG) में जानी चाहिए:")
+        
+        col_list1, col_list2 = st.columns(2)
+        
+        with col_list1:
+            ug_selected = st.multiselect(
+                "🎓 UNDERGRADUATE (UG) एलिजिबिलिटी चुनें:",
+                options=unique_eligibilities,
+                placeholder="यहाँ क्लिक करके UG एलिजिबिलिटी चुनें..."
             )
             
-            # --- बोनस: गलतियों का लाइव काउंटर ---
-            total_errors = 0
-            for index, row in df_panel.iterrows():
-                combo_val = str(row[col_deg]) + " - " + str(row[col_br])
-                current_rule = rules.get(combo_val, {"minor":[], "mdc":[], "voc":[], "pw":[]})
-                for col_name, rule_key in {col_minor: 'minor', col_mdc: 'mdc', col_voc: 'voc', col_pw: 'pw'}.items():
-                    cell_val = row[col_name]
-                    if pd.isna(cell_val) or str(cell_val).strip() == "":
-                        total_errors += 1
-                    elif current_rule[rule_key] and str(cell_val).strip().lower() not in current_rule[rule_key]:
-                        total_errors += 1
-                        
-            if total_errors > 0:
-                st.error(f"🚨 ध्यान दें: इस शीट में कुल {total_errors} सेल्स नियमों के खिलाफ (या खाली) मिले हैं!")
+        with col_list2:
+            pg_selected = st.multiselect(
+                "📜 POSTGRADUATE (PG) एलिजिबिलिटी चुनें:",
+                options=unique_eligibilities,
+                placeholder="यहाँ क्लिक करके PG एलिजिबिलिटी चुनें..."
+            )
+            
+        # डेटा को सिलेक्टेड एलिजिबिलिटी के आधार पर पूरी रो के साथ अलग करना
+        df_ug = df_raw[df_raw[eligibility_col].isin(ug_selected)].reset_index(drop=True)
+        df_pg = df_raw[df_raw[eligibility_col].isin(pg_selected)].reset_index(drop=True)
+        
+        # UG और PG के डिस्प्ले के लिए अलग टैब्स
+        tab_ug, tab_pg = st.tabs(["🎓 UG वर्गीकृत डेटा ( पूरी रो )", "📜 PG वर्गीकृत डेटा ( पूरी रो )"])
+        
+        with tab_ug:
+            st.subheader(f"UG डेटा लिस्ट (कुल रिकॉर्ड्स: {len(df_ug)})")
+            if not df_ug.empty:
+                st.dataframe(df_ug, use_container_width=True)
             else:
-                st.success("🎉 बहुत बढ़िया! आपके सेट किए गए नियमों के अनुसार सारा डेटा बिल्कुल सही है।")
+                st.info("ऊपर स्क्रॉल लिस्ट से एलिजिबिलिटी चुनने पर UG का डेटा यहाँ पूरी रो के साथ आ जाएगा।")
+                
+        with tab_pg:
+            st.subheader(f"PG डेटा लिस्ट (कुल रिकॉर्ड्स: {len(df_pg)})")
+            if not df_pg.empty:
+                st.dataframe(df_pg, use_container_width=True)
+            else:
+                st.info("ऊपर स्क्रॉल लिस्ट से एलिजिबिलिटी चुनने पर PG का डेटा यहाँ पूरी रो के साथ आ जाएगा।")
 
+
+# --- PANEL 3: ADMIN PANEL (सिर्फ एडमिन को दिखेगा, डिलीट सिर्फ पासवर्ड 'psv123' से होगा) ---
+elif panel == "⚙️ Admin Panel (मैनेजमेंट)":
+    st.title("⚙️ Admin Panel - मास्टर कंट्रोल")
+    
+    df_raw = load_raw_db_data()
+    
+    if df_raw is not None:
+        st.subheader("📊 डेटाबेस स्टेटिस्टिक्स")
+        st.info(f"वर्तमान में मास्टर डेटाबेस के अंदर कुल **{len(df_raw)}** रो (Rows) का डेटा सुरक्षित है।")
+        st.dataframe(df_raw.head(10))
+        
+        st.divider()
+        st.subheader("🗑️ डेटाबेस डिलीट डेंजर ज़ोन")
+        st.write("डेटाबेस डिलीट करने के लिए अपना एडमिन सीक्रेट कन्फर्मेशन पासवर्ड डालें:")
+        
+        delete_pass = st.text_input("कन्फर्मेशन पासवर्ड दर्ज करें:", type="password", key="del_pass_input")
+        
+        if st.button("🔴 डेटाबेस को हमेशा के लिए डिलीट करें"):
+            if delete_pass == "psv123":
+                cursor.execute("DELETE FROM raw_uploaded_data")
+                conn.commit()
+                st.success("💥 एडमिन डेटाबेस को सफलतापूर्वक साफ़ (Delete) कर दिया गया है!")
+                st.rerun()
+            else:
+                st.error("❌ गलत कन्फर्मेशन पासवर्ड! डेटा डिलीट नहीं किया गया।")
+    else:
+        st.info("डेटाबेस वर्तमान में खाली है।")
