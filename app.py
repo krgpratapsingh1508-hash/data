@@ -97,19 +97,20 @@ elif p == "💻 Work":
             # 1. एलिजिबिलिटी फ़िल्टर
             df_ug = df[df[el_col].isin(st.session_state["ug_el"])].reset_index(drop=True)
             
-            # 🎯 2. स्मार्ट कीवर्ड मैचिंग (B.A, B.Com, B.Sc ढूंढने के लिए)
-            def filter_ug_degrees(val):
+            # 🎯 2. बिल्कुल सटीक फ़िल्टर (ताकि B.A. LL.B. जैसी फालतू डिग्रियां पूरी तरह ब्लॉक हो जाएं)
+            def filter_strict_ug(val):
                 v = str(val).lower().replace(".", "").strip()
-                # अगर टेक्स्ट में इनमें से कुछ भी अंश है तो सही मानें
-                if "ba" in v or "bcom" in v or "bsc" in v or "arts" in v or "commerce" in v or "science" in v:
+                # केवल विशिष्ट डिग्रियों को अनुमति दें
+                if v in ["ba", "bcom", "bsc"] or "home science" in v:
+                    if "llb" in v or "law" in v: # सुरक्षा नेट: लॉ या एलएलबी हटाओ
+                        return False
                     return True
                 return False
                 
-            df_ug = df_ug[df_ug[deg_col].apply(filter_ug_degrees)].reset_index(drop=True)
+            df_ug = df_ug[df_ug[deg_col].apply(filter_strict_ug)].reset_index(drop=True)
             
             if df_ug.empty:
-                st.error("⚠️ चुनी गई एलिजिबिलिटी के डेटा में कोई भी UG डिग्री (B.A/B.Sc/B.Com) मैच नहीं हो पा रही है।")
-                st.info(f"आपके डिग्री वाले कॉलम `{deg_col}` में ये नाम लिखे हैं: {df[deg_col].dropna().unique().tolist()}")
+                st.error("⚠️ चुनी गई एलिजिबिलिटी में निर्दिष्ट UG डिग्रियां (B.A., B.Com., B.Sc.) नहीं मिलीं।")
             else:
                 # 3. परमानेंट कॉलम डिलीट फीचर
                 st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Columns)")
