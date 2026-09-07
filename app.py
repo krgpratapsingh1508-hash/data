@@ -75,17 +75,18 @@ def load_db_data():
 # --- PANEL 1: ENTRY PANEL ---
 if panel == "📥 Entry Panel (डेटा अपलोड)":
     st.title("📥 Entry Panel - एक्सेल/CSV डेटाबेस")
+    st.write("यहाँ डेटा अपलोड करें। आफ्टर 12थ (BA, BCom, BSc) ऑटोमैटिक UG में और आफ्टर ग्रेजुएशन (MA, MCom, MSc) PG में चले जाएंगे।")
     
     current_data = load_db_data()
     if current_data is not None:
-        st.warning(f"⚠️ डेटाबेस में पहले से {len(current_data)} रोज़ का डेटा मौजूद है।")
+        st.warning(f"⚠️ डेटाबेस में पहले से डेटा सुरक्षित है।")
         if st.button("🗑️ पुराना सारा डेटा डिलीट करें"):
             cursor.execute("DELETE FROM uploaded_data")
             conn.commit()
-            st.success("डेटाबेस खाली कर दिया गया है!")
+            st.success("डेटाबेस खाली कर दिया गया है! अब आप नई लिस्ट अपलोड कर सकते हैं।")
             st.rerun()
             
-    uploaded_file = st.file_uploader("अपनी मुख्य डेटा लिस्ट अपलोड करें", type=["csv", "xlsx"])
+    uploaded_file = st.file_uploader("अपनी मुख्य डेटा लिस्ट (Excel/CSV) अपलोड करें", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
         try:
@@ -94,43 +95,59 @@ if panel == "📥 Entry Panel (डेटा अपलोड)":
             else:
                 df = pd.read_excel(uploaded_file)
                 
-            st.subheader("📋 अपलोडेड डेटा प्रीव्यू:")
+            st.subheader("📋 अपलोडेड डेटा प्रीव्यू (शुरुआती 10 रो):")
             st.dataframe(df.head(10))
             
             st.divider()
-            st.subheader("UG / PG विभाजन सेटिंग्स")
-            selected_col = st.selectbox("कोर्स/डिग्री वाला कॉलम चुनें (जैसे Degree या Course):", df.columns)
+            st.subheader("🎯 UG / PG स्मार्ट विभाजन सेटिंग्स")
+            selected_col = st.selectbox("वह कॉलम चुनें जिसमें कोर्स या डिग्री का नाम लिखा है (जैसे Degree, Course, Class):", df.columns)
             
-            ug_keywords = st.text_input("UG के कीवर्ड्स (कमा से अलग करें)", "BA, BSC, BCOM, BTECH, UG")
-            pg_keywords = st.text_input("PG के कीवर्ड्स (कमा से अलग करें)", "MA, MSC, MCOM, MTECH, PG")
+            # डिफ़ॉल्ट कीवर्ड्स आपके नियम के अनुसार सेट कर दिए हैं
+            ug_keywords = st.text_input("UG की पहचान के लिए कोर्स के नाम (कमा से अलग करें):", "BA, B.A, BCOM, B.COM, BSC, B.SC, BTECH, B.TECH, BCA, BBA, UG")
+            pg_keywords = st.text_input("PG की पहचान के लिए कोर्स के नाम (कमा से अलग करें):", "MA, M.A, MCOM, M.COM, MSC, M.SC, MTECH, M.TECH, MBA, MCA, PG")
             
-            if st.button("💾 डेटाबेस में सुरक्षित करें"):
+            if st.button("💾 डेटाबेस में विभाजित करके सुरक्षित करें"):
+                # कीवर्ड्स को साफ और छोटे अक्षरों में बदलना
                 ug_list = [x.strip().lower() for x in ug_keywords.split(",")]
                 pg_list = [x.strip().lower() for x in pg_keywords.split(",")]
                 
                 ug_rows, pg_rows = [], []
                 
                 for _, row in df.iterrows():
-                    val = str(row[selected_col]).lower()
+                    val = str(row[selected_col]).strip().lower()
+                    
+                    # स्मार्ट चेक 1: क्या कीवर्ड मैच हो रहा है?
                     is_pg = any(kw in val for kw in pg_list)
+                    is_ug = any(kw in val for kw in ug_list)
+                    
+                    # स्मार्ट चेक 2: अगर कीवर्ड मिस हो जाए, तो 'm' से शुरू होने वाले मास्टर कोर्स PG और 'b' वाले UG
+                    if not is_pg and not is_ug:
+                        if val.startswith('m'):
+                            is_pg = True
+                        elif val.startswith('b'):
+                            is_ug = True
                     
                     row_dict = row.to_dict()
+                    
+                    # डेटा को अलग-अलग बकेट में डालना
                     if is_pg:
                         pg_rows.append(row_dict)
                     else:
+                        # अगर कुछ मैच न हो तो उसे डिफ़ॉल्ट UG (After 12th) मान लिया जाएगा
                         ug_rows.append(row_dict)
                 
+                # SQLite डेटाबेस में सेव करना
                 if ug_rows:
                     cursor.execute("INSERT INTO uploaded_data (data_json, course_type) VALUES (?, ?)", (json.dumps(ug_rows), "UG"))
                 if pg_rows:
                     cursor.execute("INSERT INTO uploaded_data (data_json, course_type) VALUES (?, ?)", (json.dumps(pg_rows), "PG"))
                 conn.commit()
                 
-                st.success(f"🎉 डेटा सेव हो गया! (UG: {len(ug_rows)} रोज़, PG: {len(pg_rows)} रोज़)")
+                st.success(f"🎉 विभाजन सफल! UG (After 12th) में {len(ug_rows)} छात्र और PG (After Graduation) में {len(pg_rows)} छात्र सेव हुए।")
                 st.balloons()
                 st.rerun()
         except Exception as e:
-            st.error(f"त्रुटि: {e}")
+            st.error(f"फ़ाइल प्रोसेस करने में त्रुटि आई: {e}")
 
 # --- PANEL 2: WORK PANEL ---
 elif panel == "💻 Work Panel (नियम और वैलिडेशन)":
