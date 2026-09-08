@@ -220,16 +220,17 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
             for col_name, rule_key in targets.items():
                 if col_name and col_name in dataframe.columns:
                     val = row[col_name]
-                    # 🔵 नीला सेल = डेटा गायब है
+                    # 🔵 नीला सेल = डेटा गायब या खाली है
                     if pd.isna(val) or str(val).strip() == "":
                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-                    # 🔴 लाल सेल = गलत विषय (मिसमैच) - नियम सेट होने पर ही ट्रिगर होगा
+                    # 🔴 लाल सेल = गलत विषय (मिसमैच या बिना अनुमति वाला विषय)
                     else:
                         val_clean = str(val).strip().lower()
                         valid_set = c_rule[rule_key]
-                        if valid_set and val_clean not in valid_set:
+                        
+                        # सुधरा हुआ नियम: अगर विषय वैध सूची में नहीं है, तो उसे तुरंत लाल (🔴) मार्क करो
+                        if val_clean not in valid_set:
                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
-        return s_df
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (Safe Data Staging Workspace)
