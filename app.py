@@ -641,6 +641,3 @@ elif panel == "⚙️ 6. Admin Panel":
             st.rerun()
         else: 
             st.error("कृपया पहले पुष्टि चेकबॉक्स पर टिक करें।")
-
-
-
