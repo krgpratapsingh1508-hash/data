@@ -162,74 +162,66 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         if not default_pw_selection:
             default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() and 'research' not in str(x).lower()]
 
-        # --- विशेष नियम: केवल B.Sc. Biotechnology के लिए (Microbio या अन्य के लिए नहीं) ---
+        # --- विशेष नियम: केवल B.Sc. Biotechnology के लिए इंटर्नशिप छूट ---
         if is_bsc_course and "biotech" in combo_lower:
             internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
             default_pw_selection.extend(internship_opts)
             default_pw_selection = list(set(default_pw_selection))
             
-        c1, c2 = st.columns(2)
+        # --- 4 कॉलम्स का लेआउट (Minor, MDC, Vocational, PW) ---
+        c1, c2, c3, c4 = st.columns(4)
+        
         with c1:
             if is_ba_course:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[ba_minor_sync_key], key=f"minor_{prefix}_{idx}")
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[ba_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
                 if r_minor != st.session_state[ba_minor_sync_key]:
                     st.session_state[ba_minor_sync_key] = r_minor
                     st.rerun()
             elif is_bsc_course:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_{prefix}_{idx}")
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
                 if r_minor != st.session_state[bsc_minor_sync_key]:
                     st.session_state[bsc_minor_sync_key] = r_minor
                     st.rerun()
             else:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, key=f"minor_{prefix}_{idx}")
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, key=f"minor_sync_{prefix}_{idx}")
+                
         with c2:
             if is_ba_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
                 if r_mdc != st.session_state[ba_mdc_sync_key]:
                     st.session_state[ba_mdc_sync_key] = r_mdc
                     st.rerun()
             elif is_bsc_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
                 if r_mdc != st.session_state[bsc_mdc_sync_key]:
                     st.session_state[bsc_mdc_sync_key] = r_mdc
                     st.rerun()
             else:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_sync_{prefix}_{idx}")
                 
-        c3, c4 = st.columns(2)
         with c3:
             if is_ba_course:
-                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_sync_{prefix}_{idx}")
                 if r_voc != st.session_state[ba_voc_sync_key]:
                     st.session_state[ba_voc_sync_key] = r_voc
                     st.rerun()
             elif is_bsc_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
-                if r_mdc != st.session_state[bsc_mdc_sync_key]:
-                    st.session_state[bsc_mdc_sync_key] = r_mdc
-                    st.rerun()
-            else:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
-                
-        c3, c4 = st.columns(2)
-        with c3: 
-            # --- Vocational (Skill) मास्टर सिंक लॉजिक (BA/B.Sc.) ---
-            if is_ba_course:
-                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_{prefix}_{idx}")
-                if r_voc != st.session_state[ba_voc_sync_key]:
-                    st.session_state[ba_voc_sync_key] = r_voc
-                    st.rerun()
-            elif is_bsc_course:
-                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_sync_{prefix}_{idx}")
                 if r_voc != st.session_state[bsc_voc_sync_key]:
                     st.session_state[bsc_voc_sync_key] = r_voc
                     st.rerun()
             else:
-                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_sync_{prefix}_{idx}")
                 
-        with c4: 
-            # --- Project Work डिफ़ॉल्ट सिलेक्शन लॉजिक ---
-            r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
+        with c4:
+            r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_sync_{prefix}_{idx}")
+            
+        rules[combo] = {
+            "minor": {str(x).strip().lower() for x in r_minor},
+            "mdc": {str(x).strip().lower() for x in r_mdc},
+            "voc": {str(x).strip().lower() for x in r_voc},
+            "pw": {str(x).strip().lower() for x in r_pw}
+        }
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
