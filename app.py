@@ -448,8 +448,8 @@ elif panel == "🎓 3. UG Panel":
         except Exception as e:
             pass
 
-        # आपकी मांगी गई 5 विशिष्ट डिग्रियां
-        target_degrees = ["BA", "B.Sc.", "B.H.Sc.", "B.Com.", "B.Com. Computer"]
+        # आपकी मांगी गई 6 विशिष्ट डिग्रियां
+        target_degrees = ["BA", "B.Sc.", "B.Sc. Biotechnology", "B.H.Sc.", "B.Com.", "B.Com. Computer"]
         current_configured_rules = {}
         
         for deg in target_degrees:
