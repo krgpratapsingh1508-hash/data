@@ -223,6 +223,23 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
             "pw": {str(x).strip().lower() for x in r_pw}
         }
 
+    st.divider()
+    st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
+    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मिसमैच)")
+    
+    display_df = df_filtered.drop(columns=['combo'])
+    st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
+
+    # --- लाइव डाउनलोड फ़ीचर ---
+    st.caption("💡 **टिप:** आप नीचे दिए गए बटन से इस पैनल का पूरा वैरिफाइड डेटा तुरंत डाउनलोड कर सकते हैं।")
+    csv_validated = display_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
+        data=csv_validated,
+        file_name=f"Verified_{prefix.upper()}_Data.csv",
+        mime="text/csv",
+        key=f"download_validated_{prefix}"
+
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
 # =========================================================================
