@@ -513,12 +513,13 @@ elif panel == "📜 4. PG Panel":
         process_panel_validation(df_pg, "pg", ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"])
 
 # =========================================================================
-# 📊 PANEL 5: DASHBOARD / COUNTER PANEL
+# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (टैब्स आधारित लाइव वैलिडेशन काउंटर)
 # =========================================================================
 elif panel == "📊 5. Dashboard / Counter Panel":
     st.title("📊 Dashboard - डिग्री-वाइज विषयों की लाइव गणना एवं त्रुटि सुधार")
-    st.write("यहाँ प्रत्येक डिग्री के अनुसार उपयोग हो रहे विषयों के नाम, छात्रों की संख्या और उनकी वैधता (मास्टर नियमों के अनुसार) लाइव प्रदर्शित हो रही है।")
+    st.write("नीचे दिए गए टैब पर क्लिक करके अपनी संबंधित डिग्री (BA, B.Com, B.Sc, B.H.Sc) का लाइव काउंटर और त्रुटि स्थिति देखें।")
     
+    # UG और PG दोनों का डेटा लोड करना
     df_ug_all = load_permanent_data("UG")
     df_pg_all = load_permanent_data("PG")
     
@@ -538,15 +539,17 @@ elif panel == "📊 5. Dashboard / Counter Panel":
         voc_col = next((c for c in master_df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
         pw_col = next((c for c in master_df.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
         
+        # 🔒 डेटाबेस से UG मास्टर नियमों को सुरक्षित लोड करना
         ug_master_rules = {}
         try:
             cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
             locked_row = cursor.fetchone()
-            if locked_row and locked_row[0]:  # यहाँ [0] का उपयोग आवश्यक है क्योंकि fetchone टुपल देता है
+            if locked_row and locked_row[0]:
                 ug_master_rules = json.loads(locked_row[0])
-        except Exception as e:
+        except:
             pass
 
+        # डिग्रियों की सूची की सटीक मैपिंग
         target_degrees = [
             {"display": "BA", "keywords": ["ba"]},
             {"display": "B.Com.", "keywords": ["bcom"], "exclude": ["computer"]},
@@ -554,79 +557,86 @@ elif panel == "📊 5. Dashboard / Counter Panel":
             {"display": "B.H.Sc.", "keywords": ["bhsc"]}
         ]
 
-        st.divider()
-        
-        for deg_info in target_degrees:
-            st.markdown(f"## 🎓 {deg_info['display']} विषय लाइव काउंटर स्थिति")
-            
-            if deg_col and deg_col in master_df.columns:
-                def match_degree(val):
-                    v = str(val).lower().replace(".", "").replace(" ", "").strip()
-                    match = all(k in v for k in deg_info["keywords"])
-                    if "exclude" in deg_info:
-                        if any(ex in v for ex in deg_info["exclude"]):
-                            match = False
-                    return match
-                
-                df_deg_filtered = master_df[master_df[deg_col].apply(match_degree)].reset_index(drop=True)
-            else:
-                df_deg_filtered = pd.DataFrame()
+        # ✨ जादू यहाँ है: सभी डिग्रियों के लिए अलग-अलग क्लिक करने योग्य टैब्स बनाएँ
+        tab_titles = [deg["display"] for deg in target_degrees]
+        tabs = st.tabs(tab_titles)
 
-            if df_deg_filtered.empty:
-                st.caption(f"⚠️ डेटाबेस में `{deg_info['display']}` का कोई छात्र रिकॉर्ड नहीं मिला।")
-                st.divider()
-                continue
+        # प्रत्येक टैब के अंदर केवल उसी डिग्री का डेटा प्रोसेस और शो करना
+        for index, deg_info in enumerate(target_degrees):
+            with tabs[index]:  # यूजर जिस डिग्री टैब पर क्लिक करेगा वही ओपन होगा
+                st.markdown(f"### 🎓 {deg_info['display']} विषय लाइव काउंटर स्थिति")
                 
-            deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
-            
-            # ग्रिड के लिए 4 कॉलम बनाना
-            ui_cols = st.columns(4)
-            
-            # कैटेगरीज की सूची को सही ढंग से परिभाषित करना ताकि ग्रिड लूप न टूटे
-            categories = [
-                {"label": "Minor (माइनर)", "col_name": minor_col, "rule_key": "minor", "ui_col": ui_cols[0]},
-                {"label": "MDC (एम.डी.सी.)", "col_name": mdc_col, "rule_key": "mdc", "ui_col": ui_cols[1]},
-                {"label": "Vocational (व्यवसायिक)", "col_name": voc_col, "rule_key": "voc", "ui_col": ui_cols[2]},
-                {"label": "Project/PW (परियोजना)", "col_name": pw_col, "rule_key": "pw", "ui_col": ui_cols[3]},
-            ]
-            
-            for cat in categories:
-                with cat["ui_col"]:
-                    st.markdown(f"#### {cat['label']}")
+                # छात्र सूची में से इस विशिष्ट डिग्री के छात्रों को फ़िल्टर करना
+                if deg_col and deg_col in master_df.columns:
+                    def match_degree(val):
+                        v = str(val).lower().replace(".", "").replace(" ", "").strip()
+                        match = all(k in v for k in deg_info["keywords"])
+                        if "exclude" in deg_info:
+                            if any(ex in v for ex in deg_info["exclude"]):
+                                match = False
+                        return match
                     
-                    if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
-                        counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
-                        counts.columns = ["Subject", "Count"]
+                    df_deg_filtered = master_df[master_df[deg_col].apply(match_degree)].reset_index(drop=True)
+                else:
+                    df_deg_filtered = pd.DataFrame()
+
+                if df_deg_filtered.empty:
+                    st.warning(f"⚠️ डेटाबेस में `{deg_info['display']}` का कोई छात्र रिकॉर्ड नहीं मिला।")
+                    continue
+                    
+                # इस डिग्री के लिए मास्टर नियम निकालना
+                deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
+                
+                # स्क्रीन को 4 समानांतर भागों (कोशिकाओं) में बांटना
+                ui_cols = st.columns(4)
+                
+                categories = [
+                    {"label": "Minor (माइनर)", "col_name": minor_col, "rule_key": "minor", "col_idx": 0},
+                    {"label": "MDC (एम.डी.सी.)", "col_name": mdc_col, "rule_key": "mdc", "col_idx": 1},
+                    {"label": "Vocational (व्यवसायिक)", "col_name": voc_col, "rule_key": "voc", "col_idx": 2},
+                    {"label": "Project/PW (परियोजना)", "col_name": pw_col, "rule_key": "pw", "col_idx": 3},
+                ]
+                
+                for cat in categories:
+                    with ui_cols[cat["col_idx"]]:
+                        st.markdown(f"#### {cat['label']}")
                         
-                        if not counts.empty:
-                            valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
+                        if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
+                            # काउंट्स (फ्रीक्वेंसी) की लाइव गणना
+                            counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
+                            counts.columns = ["Subject", "Count"]
                             
-                            def row_styler(row):
-                                sub_val = str(row["Subject"]).strip().lower()
-                                if valid_subjects_set and (sub_val not in valid_subjects_set):
-                                    return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
-                                return [''] * len(row)
-                            
-                            if cat["rule_key"] == "pw":
-                                st.markdown("**Project Type**<br><span style='color:gray; font-size:13px;'>(प्रोजेक्ट प्रकार)</span>", unsafe_allow_html=True)
+                            if not counts.empty:
+                                # मास्टर नियम से वैध विषयों का सेट बनाना
+                                valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
+                                
+                                # गलत या मिसमैच विषयों को लाल रंग में दिखाने का स्टाइलर नियम
+                                def row_styler(row):
+                                    sub_val = str(row["Subject"]).strip().lower()
+                                    if valid_subjects_set and (sub_val not in valid_subjects_set):
+                                        return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
+                                    return [''] * len(row)
+                                
+                                # स्वच्छ हेडर लेबल्स
+                                if cat["rule_key"] == "pw":
+                                    st.markdown("**Project Type**<br><span style='color:gray; font-size:13px;'>(प्रोजेक्ट प्रकार)</span>", unsafe_allow_html=True)
+                                else:
+                                    st.markdown("**Subject Name**<br><span style='color:gray; font-size:13px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
+                                
+                                # ग्रिड टेबल रेंडर इंजन
+                                st.dataframe(
+                                    counts.style.apply(row_styler, axis=1), 
+                                    hide_index=True, 
+                                    use_container_width=True,
+                                    column_config={
+                                        "Subject": st.column_config.TextColumn(label=" ", width="medium"),
+                                        "Count": st.column_config.NumberColumn(label=" ", width="small")
+                                    }
+                                )
                             else:
-                                st.markdown("**Subject Name**<br><span style='color:gray; font-size:13px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
-                            
-                            # Streamlit dataframe wrapper layout render engine
-                            st.dataframe(
-                                counts.style.apply(row_styler, axis=1), 
-                                hide_index=True, 
-                                use_container_width=True,
-                                column_config={
-                                    "Subject": st.column_config.TextColumn(label=" ", width="medium"),
-                                    "Count": st.column_config.NumberColumn(label=" ", width="small")
-                                }
-                            )
+                                st.caption("कोई डेटा नहीं")
                         else:
-                            st.caption("कोई डेटा नहीं")
-                    else:
-                        st.caption("कॉलम नहीं मिला")
-            st.divider()
+                            st.caption("कॉलम नहीं मिला")
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
