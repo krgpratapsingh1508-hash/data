@@ -29,11 +29,11 @@ cursor.execute("""
 """)
 conn.commit()
 
-# Session States
+# Session States Management
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 
-# --- LOGIN SYSTEM ---
+# --- LOGIN SYSTEM WITH PASSWORD ---
 if not st.session_state["ok"]:
     st.title("🔒 Login System")
     user = st.selectbox("Username:", ["-- चुनें --", "Admin", "Operator", "Teacher_UG", "Teacher_PG"])
@@ -48,7 +48,7 @@ if not st.session_state["ok"]:
     st.stop()
 
 # =========================================================================
-# 5 रोल-बेस्ड पैनल्स का नेविगेशन
+# 5 रोल-बेस्ड पैनल्स का नेविगेशन (5 Panels Structure)
 # =========================================================================
 u = st.session_state["user"]
 
@@ -69,7 +69,7 @@ else:
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-# डेटाबेस से डेटा लोड करने के फंक्शंस
+# डेटाबेस से डेटा लोड करने के सहायक फंक्शंस
 def load_raw_data():
     cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
@@ -88,7 +88,7 @@ def load_permanent_data(c_type):
     return None
 
 # =========================================================================
-# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA MDC सिंक नियम
+# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA/B.Sc MDC सिंक नियम
 # =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
@@ -118,44 +118,52 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     opt_voc = df_filtered[voc_col].dropna().unique().tolist() if (voc_col and voc_col in df_filtered.columns) else []
     opt_pw = df_filtered[pw_col].dropna().unique().tolist() if (pw_col and pw_col in df_filtered.columns) else []
     
-    # --- BA MDC मास्टर सिंक स्टेट मैनेजमेंट ---
+    # --- BA और B.Sc. MDC मास्टर सिंक स्टेट मैनेजमेंट ---
     ba_sync_key = f"ba_mdc_master_sync_{prefix}"
-    if ba_sync_key not in st.session_state:
-        st.session_state[ba_sync_key] = []
+    bsc_sync_key = f"bsc_mdc_master_sync_{prefix}"
+    
+    if ba_sync_key not in st.session_state: st.session_state[ba_sync_key] = []
+    if bsc_sync_key not in st.session_state: st.session_state[bsc_sync_key] = []
 
     rules = {}
     
-    # यदि कोई भी BA कॉम्बिनेशन है, तो सबसे ऊपर एक कॉमन BA MDC सेलेक्टर दिखाना
     has_ba = any("ba-" in combo.lower().replace(".", "").replace(" ", "") or combo.lower().startswith("ba ") for combo in unique_combos)
+    has_bsc = any("bsc" in combo.lower().replace(".", "").replace(" ", "") for combo in unique_combos)
     
-    if has_ba:
-        st.info("💡 **BA स्पेशल रूल:** आप नीचे किसी भी BA कोर्स का MDC बदलेंगे, वह सभी BA कोर्सेस में एक साथ लागू हो जाएगा।")
+    if has_ba or has_bsc:
+        st.info("💡 **विशेष नियम सक्रिय:** आप किसी भी BA या B.Sc. का MDC बदलेंगे, वह उस डिग्री के सभी ब्रांचों में स्वतः एक साथ लागू हो जाएगा।")
     
     for idx, combo in enumerate(unique_combos):
         st.markdown(f"#### 📍 `{combo}`")
         c1, c2, c3 = st.columns(3)
         
         combo_lower = combo.lower().replace(".", "").replace(" ", "")
-        is_ba_course = "ba-" in combo_lower or combo_lower.startswith("ba") and not combo_lower.startswith("ba(ex") and "bsc" not in combo_lower and "bcom" not in combo_lower
+        
+        # डिग्री प्रकार की सटीक पहचान
+        is_ba_course = "ba-" in combo_lower or (combo_lower.startswith("ba") and not combo_lower.startswith("ba(ex") and "bsc" not in combo_lower and "bcom" not in combo_lower)
+        is_bsc_course = "bsc" in combo_lower
         
         # --- सख्त डिफ़ॉल्ट नियम (No Research Project) ---
         default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw"]]
         if not default_pw_selection:
             default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() and 'research' not in str(x).lower()]
 
-        # --- विशेष छूट नियम: B.Sc. Bio / Biotech के लिए ---
-        if "bsc" in combo_lower and ("biotech" in combo_lower or "bio" in combo_lower):
+        # --- विशेष छूट नियम: B.Sc. Bio / Biotech के लिए Internship जोड़ना ---
+        if is_bsc_course and ("biotech" in combo_lower or "bio" in combo_lower):
             internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
             default_pw_selection.extend(internship_opts)
             default_pw_selection = list(set(default_pw_selection))
             
         with c1: 
-            # BA के लिए सिंक वैल्यू मैनेज करना
             if is_ba_course:
                 r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_sync_key], key=f"mdc_{prefix}_{idx}")
-                # यदि इस वाले बॉक्स में कोई बदलाव हुआ, तो मास्टर स्टेट अपडेट करें और रीरन करें ताकि बाकी BA बॉक्स अपडेट हो जाएं
                 if r_mdc != st.session_state[ba_sync_key]:
                     st.session_state[ba_sync_key] = r_mdc
+                    st.rerun()
+            elif is_bsc_course:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_sync_key], key=f"mdc_{prefix}_{idx}")
+                if r_mdc != st.session_state[bsc_sync_key]:
+                    st.session_state[bsc_sync_key] = r_mdc
                     st.rerun()
             else:
                 r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
@@ -204,42 +212,66 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     display_df = df_filtered.drop(columns=['combo'])
     st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
 
+    # --- 📥 प्रत्येक पैनल के लिए लाइव डाउनलोड फ़ीचर (New Feature) ---
+    st.caption("💡 **टिप:** आप नीचे दिए गए बटन से इस पैनल का पूरा वैरिफाइड डेटा तुरंत डाउनलोड कर सकते हैं।")
+    
+    # डेटा को UTF-8 CSV में कनवर्ट करना
+    csv_validated = display_df.to_csv(index=False).encode('utf-8')
+    
+    st.download_button(
+        label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
+        data=csv_validated,
+        file_name=f"Verified_{prefix.upper()}_Data.csv",
+        mime="text/csv",
+        key=f"download_validated_{prefix}"
+    )
+
 # =========================================================================
-# 📥 PANEL 1: ENTRY / UPLOAD PANEL
+# 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
 # =========================================================================
 if panel == "📥 1. Entry / Upload Panel":
     st.title("📥 Entry Panel - डेटा सुरक्षित अपलोड")
-    st.write("यहाँ अपलोड की गई फ़ाइल सीधे समीक्षा के लिए **Work / Approve Panel** में भेज दी जाएगी।")
+    st.write("यहाँ अपनी मुख्य एक्सेल/CSV फ़ाइल अपलोड करें। यह डेटा सीधे समीक्षा और क्लीनिंग के लिए **Work / Approve Panel (P2)** में ट्रांसफर हो जाएगा।")
     
+    # एक्सेल या सीएसवी फ़ाइल अपलोड करने का विकल्प
     f = st.file_uploader("अपनी फ़ाइल अपलोड करें", type=["csv", "xlsx"])
     if f:
         try:
+            # फ़ाइल टाइप के अनुसार डेटाबेस में रीड करना (Pandas Dataframe)
             df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
-            st.success(f"फ़ाइल लोड हो गई ({len(df)} रोज़)!")
+            st.success(f"🎉 फ़ाइल सफलतापूर्वक लोड हो गई ({len(df)} रोज़)!")
             
-            if st.button("📤 वर्क/अप्रूवल पैनल में भेजें"):
+            # डेटा को P2 में ट्रांसफर करने का बटन
+            if st.button("📤 वर्क/अप्रूवल पैनल (P2) में ट्रांसफर करें"):
+                # पुराने किसी भी रॉ (Temporary) डेटा को साफ़ करना
                 cursor.execute("DELETE FROM raw_store")
+                
+                # डेटाफ़्रेम को JSON में बदलकर सुरक्षित रूप से अस्थायी डेटाबेस में स्टोर करना
                 cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(df.to_dict(orient='records')),))
                 conn.commit()
+                
+                # पुराने फ़ाइल के डिलीट किए गए कॉलम्स की सेटिंग्स को रीसेट करना
                 st.session_state["deleted_cols"] = [] 
                 
-                st.success("🎉 फ़ाइल सफलतापूर्वक अपलोड होकर **Work / Approve Panel** में ट्रांसफर हो गई है!")
+                st.success("🎉 डेटा सफलतापूर्वक अपलोड होकर **Work / Approve Panel** में प्रोसेस होने के लिए ट्रांसफर हो गया है!")
                 st.balloons()
+                st.rerun()
         except Exception as e:
             st.error(f"त्रुटि: {e}")
 
 # =========================================================================
-# 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम/रो हटाना + लाइव स्प्लिट + रूटिंग)
+# 💻 PANEL 2: WORK / APPROVE PANEL (Column Dropping, Row Purging & Smart Routing)
 # =========================================================================
 elif panel == "💻 2. Work / Approve Panel":
     st.title("💻 Work / Approve Panel - डेटा प्रोसेसिंग एवं अप्रूवल")
     
+    # Load volatile transient datasets passed down from Panel 1
     raw_df = load_raw_data()
     
-    if raw_df is None:
-        st.info("📥 वर्तमान में कोई नई अपलोड की गई फ़ाइल पेंडिंग नहीं है। कृपया पहले 'Entry / Upload Panel' से फ़ाइल अपलोड करें।")
+    if raw_df is None or raw_df.empty:
+        st.info("📥 वर्तमान में कोई नई अपलोड की गई फ़ाइल पेंडिंग नहीं है। कृपया पहले 'Entry / Upload Panel (P1)' से फ़ाइल अपलोड करें।")
     else:
-        # --- कार्य 1: बेकार कॉलम हटाना ---
+        # --- Task 1: Drop Unwanted Tracking Columns ---
         st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Unwanted Columns)")
         active_cols = [c for c in raw_df.columns if c not in st.session_state["deleted_cols"]]
         
@@ -250,17 +282,17 @@ elif panel == "💻 2. Work / Approve Panel":
                 st.success("चयनित कॉलम स्क्रीन से हटा दिए गए!")
                 st.rerun()
         
-        # वर्तमान एक्टिव कॉलम्स का डेटा तैयार करना
+        # Build masked operation matrix frames
         final_raw_df = raw_df[active_cols]
         
-        # स्वचालित रूप से डिग्री और ब्रांच वाले कॉलम खोजना
+        # Identify degree and stream indexes dynamically to prevent crashing
         deg_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), final_raw_df.columns[0])
-        br_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), final_raw_df.columns[1])
+        br_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), final_raw_df.columns[1] if len(final_raw_df.columns) > 1 else final_raw_df.columns[0])
         
-        # --- कार्य 2: विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करना ---
+        # --- Task 2: Targeted Row-Block Purging Based on Degrees/Branches ---
         st.divider()
         st.subheader("❌ विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करें")
-        st.write("यदि आप किसी खास कोर्स या स्ट्रीम का डेटा हटाना चाहते हैं, तो यहाँ से चुनें:")
+        st.write("यदि आप किसी खास कोर्स या स्ट्रीम का पूरा डेटा हटाना चाहते हैं, तो यहाँ से चुनें:")
         
         c_row1, c_row2 = st.columns(2)
         with c_row1:
@@ -272,42 +304,41 @@ elif panel == "💻 2. Work / Approve Panel":
             
         if selected_degs or selected_branches:
             if st.button("🗑️ चुनी हुई रोज़ हमेशा के लिए डिलीट करें"):
-                # फ़िल्टर लॉजिक: जो डिग्री या ब्रांच चुनी गई है उसे डेटा से बाहर करना
                 filtered_rows = []
                 for _, row in raw_df.iterrows():
                     match_deg = str(row[deg_col]) in selected_degs if selected_degs else False
                     match_br = str(row[br_col]) in selected_branches if selected_branches else False
                     
-                    # अगर दोनों में से कोई भी मैच हो गया तो उसे छोड़ देंगे (डिलीट कर देंगे)
+                    # If any metrics match up against targets, leave them out of the database slice
                     if not (match_deg or match_br):
                         filtered_rows.append(row.to_dict())
                 
-                # डेटाबेस अपडेट करना
+                # Commit clean operational array back to staging storage
                 cursor.execute("DELETE FROM raw_store")
                 if filtered_rows:
                     cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(filtered_rows),))
-                
                 conn.commit()
+                
                 st.success("🎉 चयनित डिग्री/ब्रांच की सभी रोज़ को सफलतापूर्वक डिलीट कर दिया गया है!")
                 st.rerun()
 
-        # फ़िल्टर्ड डेटा का प्रीव्यू दिखाना
+        # Display raw input preview grids
         st.divider()
         st.subheader("📋 अपलोड किए गए रॉ डेटा का लाइव प्रीव्यू")
         st.dataframe(final_raw_df, height=350, use_container_width=True)
         
-        # ऑटोमैटिक UG/PG विभाजन के लिए कॉलम खोजना
+        # Auto-detect target routing anchor points based on eligibility properties
         el_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['elig', 'qual', 'class', 'course', 'deg'])), final_raw_df.columns[0])
         st.info(f"🔍 सिस्टम ऑटो-वर्गीकरण के लिए **'{el_col}'** कॉलम का उपयोग कर रहा है।")
         
-        # --- लाइव प्री-विभाजन समीक्षा (बटन दबाने से पहले देखें) ---
+        # --- Task 3: Live Distributed Pre-Routing Tabs (Preview Split Groups) ---
         st.subheader("👀 लाइव प्री-विभाजन समीक्षा (Live Split Preview)")
-        
         ug_preview_rows = []
         pg_preview_rows = []
         
         for _, row in final_raw_df.iterrows():
             val = str(row[el_col]).lower().replace(".", "").replace(" ", "").strip()
+            # Post-graduate conditional filtering logic bounds
             if any(k in val for k in ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "grad"]):
                 pg_preview_rows.append(row)
             else:
@@ -319,29 +350,27 @@ elif panel == "💻 2. Work / Approve Panel":
         prev_tab1, prev_tab2 = st.tabs([f"🎓 UG में जाने वाला डेटा ({len(df_ug_preview)} रोज़)", f"📜 PG में जाने वाला डेटा ({len(df_pg_preview)} रोज़)"])
         
         with prev_tab1:
-            if not df_ug_preview.empty:
+            if not df_ug_preview.empty: 
                 st.dataframe(df_ug_preview, height=250, use_container_width=True)
-            else:
+            else: 
                 st.caption("कोई डेटा UG श्रेणी में नहीं मिला।")
-                
         with prev_tab2:
-            if not df_pg_preview.empty:
+            if not df_pg_preview.empty: 
                 st.dataframe(df_pg_preview, height=250, use_container_width=True)
-            else:
+            else: 
                 st.caption("कोई डेटा PG श्रेणी में नहीं मिला।")
 
-        # --- फाइनल अप्रूवल और रूटिंग एक्शन ---
+        # --- Task 4: Final Database Locking Actions ---
         st.divider()
         st.subheader("🚀 फाइनल एक्शन")
-        
         if st.button("✅ डेटा अप्रूव करें और संबंधित पैनल्स में ट्रांसफर करें"):
+            # Permanently append distribution segments into clean production target logs
             if not df_ug_preview.empty:
-                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", 
-                               (json.dumps(df_ug_preview.to_dict(orient='records')), "UG"))
+                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (json.dumps(df_ug_preview.to_dict(orient='records')), "UG"))
             if not df_pg_preview.empty:
-                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", 
-                               (json.dumps(df_pg_preview.to_dict(orient='records')), "PG"))
+                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (json.dumps(df_pg_preview.to_dict(orient='records')), "PG"))
             
+            # Wipe staging cache frames clean so the operational space refreshes empty
             cursor.execute("DELETE FROM raw_store")
             conn.commit()
             
@@ -365,9 +394,8 @@ elif panel == "🎓 3. UG Panel":
         # आवश्यक कोर्सेस/डिग्री की सूची जिन्हें इस UG पैनल में प्रोसेस करना है
         allowed_ug_degrees = ["ba", "bsc", "bcom", "bhsc", "12th", "bba", "bca", "btech", "llb"]
         
-        # कोर वैलिडेशन और लाइव हाइलाइटिंग टेबल को रन करना
-        # यह फ़ंक्शन ऑटोमैटिकली गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
-        # इसमें B.Sc. Biotechnology के लिए Project Work + Internship का ऑटो-नियम लागू है।
+        # कोर वैलिडेशन, मास्टर एमडीसी सिंक और लाइव हाइलाइटिंग टेबल को रन करना
+        # यह फ़ंक्शन गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
         process_panel_validation(df_ug, "ug", allowed_ug_degrees)
 
 # =========================================================================
@@ -387,7 +415,7 @@ elif panel == "📜 4. PG Panel":
         allowed_pg_degrees = ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"]
         
         # कोर वैलिडेशन और लाइव हाइलाइटिंग टेबल को रन करना
-        # यह फ़ंक्शन ऑटोमैटिकली गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
+        # यह फ़ंक्शन गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
         process_panel_validation(df_pg, "pg", allowed_pg_degrees)
 
 # =========================================================================
