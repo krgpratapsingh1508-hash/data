@@ -80,33 +80,6 @@ else:
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-# डेटाबेस से डेटा लोड करने के सटीक फंक्शंस (Tuple Parsing Fix)
-def load_raw_data():
-    cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
-    row = cursor.fetchone()
-    if row and row[0]:
-        return pd.DataFrame(json.loads(row[0]))
-    return None
-
-def load_permanent_data(c_type):
-    cursor.execute("SELECT data_json FROM perma_store WHERE course_type = ?", (c_type,))
-    rows = cursor.fetchall()
-    if rows:
-        dfs = []
-        for r in rows:
-            if r and r[0]:
-                try:
-                    data_parsed = json.loads(r[0])
-                    dfs.append(pd.DataFrame(data_parsed))
-                except Exception as e:
-                    continue
-        if dfs:
-            return pd.concat(dfs, ignore_index=True)
-    return None
-
-# =========================================================================
-# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA/B.Sc MDC + VOC + MINOR सिंक नियम
-# =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
     br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
@@ -145,10 +118,15 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     bsc_mdc_sync_key = f"bsc_mdc_sync_{prefix}"
     bsc_voc_sync_key = f"bsc_voc_sync_{prefix}"
     
-    # डेटाबेस से पुराने लॉक किए गए नियमों को सेशन स्टेट्स में ऑटो-लोड करना (ताकि डेटा डिलीट होने पर भी डिब्बे भरे रहें)
-    cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = ?", (prefix,))
-    locked_row = cursor.fetchone()
-    saved_rules = json.loads(locked_row[0]) if locked_row and locked_row[0] else {}
+    # 🔒 सुरक्षित डेटाबेस कॉल (ताकि एरर आने पर ऐप क्रैश न हो)
+    saved_rules = {}
+    try:
+        cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = ?", (prefix,))
+        locked_row = cursor.fetchone()
+        if locked_row and locked_row[0]:
+            saved_rules = json.loads(locked_row[0])
+    except sqlite3.OperationalError:
+        pass # अगर टेबल लॉक या गायब हो तो एरर स्किप करें
 
     if ba_minor_sync_key not in st.session_state: st.session_state[ba_minor_sync_key] = saved_rules.get("ba_minor", [])
     if ba_mdc_sync_key not in st.session_state: st.session_state[ba_mdc_sync_key] = saved_rules.get("ba_mdc", [])
@@ -184,7 +162,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
             default_pw_selection.extend(internship_opts)
             default_pw_selection = list(set(default_pw_selection))
             
-        # --- 4 कॉलम्स का लेआउट (Minor, MDC, Vocational, PW) ---
+        # --- 4 कॉलम्स का सटीक लेआउट (सारे डुप्लीकेट ब्लॉक्स हटा दिए गए हैं) ---
         c1, c2, c3, c4 = st.columns(4)
         
         with c1:
@@ -192,20 +170,6 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
                 r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[ba_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
                 if r_minor != st.session_state[ba_minor_sync_key]:
                     st.session_state[ba_minor_sync_key] = r_minor
-                    st.rerun()
-            elif is_bsc_course:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
-                if r_minor != st.session_state[bsc_minor_sync_key]:
-                    st.session_state[bsc_minor_sync_key] = r_minor
-                    st.rerun()
-            else:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, key=f"minor_sync_{prefix}_{idx}")
-                
-        with c2:
-            if is_ba_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
-                if r_mdc != st.session_state[ba_mdc_sync_key]:
-                    st.session_state[ba_mdc_sync_key] = r_mdc
                     st.rerun()
             elif is_bsc_course:
                 r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
@@ -246,7 +210,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         with c4:
             r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_sync_{prefix}_{idx}")
             
-        # सभी सिलेक्टेड विषयों को नियमों (Rules Mapping Array) में लॉक करना
+        # नियमों को सुरक्षित रूप से मैप करें
         rules[combo] = {
             "minor": {str(x).strip().lower() for x in r_minor},
             "mdc": {str(x).strip().lower() for x in r_mdc},
