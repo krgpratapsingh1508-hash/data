@@ -6,7 +6,7 @@ import json
 st.set_page_config(layout="wide")
 
 # =========================================================================
-# डेटाबेस सेटअप - टेबल्स संरचना (Raw, Permanent और Rules Lock)
+# डेटाबेस延 सेटअप - दो टेबल्स (1. अस्थायी रॉ डेटा के लिए, 2. अप्रूव्ड डेटा के लिए)
 # =========================================================================
 conn = sqlite3.connect("nep_master_perma_db.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -25,14 +25,6 @@ cursor.execute("""
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         data_json TEXT,
         course_type TEXT
-    )
-""")
-
-# 3. परमानेंट नियम लॉकिंग स्टोरेज (डेटा डिलीट होने पर भी ड्रॉपडाउन डिब्बे भरे रखने के लिए)
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS locked_rules (
-        panel_prefix TEXT PRIMARY KEY,
-        rules_json TEXT
     )
 """)
 conn.commit()
@@ -56,7 +48,7 @@ if not st.session_state["ok"]:
     st.stop()
 
 # =========================================================================
-# 🔄 6 रोल-बेस्ड पैनल्स का नेविगेशन (Updated to 6 Panels Structure)
+# 5 रोल-बेस्ड पैनल्स का नेविगेशन
 # =========================================================================
 u = st.session_state["user"]
 
@@ -72,13 +64,12 @@ else:
         "💻 2. Work / Approve Panel", 
         "🎓 3. UG Panel", 
         "📜 4. PG Panel", 
-        "📊 5. Dashboard / Counter Panel", # नया काउंटर पैनल
-        "⚙️ 6. Admin Panel"                 # एडमिन अब पैनल 6 बन गया है
+        "⚙️ 5. Admin Panel"
     ]
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-# डेटाबेस से डेटा लोड करने के सटीक फंक्शंस (Tuple Parsing Fix)
+# डेटाबेस से डेटा लोड करने के सटीक फंक्शंस (Tuple Indexing Fix)
 def load_raw_data():
     cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
@@ -106,8 +97,8 @@ def load_permanent_data(c_type):
 # 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA/B.Sc MDC + VOC + MINOR सिंक नियम
 # =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
-    deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
-    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
+    deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns)
+    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns)
     
     def check_degree(val):
         v = str(val).lower().replace(".", "").replace(" ", "").strip()
@@ -143,18 +134,13 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     bsc_mdc_sync_key = f"bsc_mdc_sync_{prefix}"
     bsc_voc_sync_key = f"bsc_voc_sync_{prefix}"
     
-    # डेटाबेस से पुराने लॉक किए गए नियमों को सेशन स्टेट्स में ऑटो-लोड करना (ताकि डेटा डिलीट होने पर भी डिब्बे भरे रहें)
-    cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = ?", (prefix,))
-    locked_row = cursor.fetchone()
-    saved_rules = json.loads(locked_row[0]) if locked_row and locked_row[0] else {}
-
-    if ba_minor_sync_key not in st.session_state: st.session_state[ba_minor_sync_key] = saved_rules.get("ba_minor", [])
-    if ba_mdc_sync_key not in st.session_state: st.session_state[ba_mdc_sync_key] = saved_rules.get("ba_mdc", [])
-    if ba_voc_sync_key not in st.session_state: st.session_state[ba_voc_sync_key] = saved_rules.get("ba_voc", [])
+    if ba_minor_sync_key not in st.session_state: st.session_state[ba_minor_sync_key] = []
+    if ba_mdc_sync_key not in st.session_state: st.session_state[ba_mdc_sync_key] = []
+    if ba_voc_sync_key not in st.session_state: st.session_state[ba_voc_sync_key] = []
     
-    if bsc_minor_sync_key not in st.session_state: st.session_state[bsc_minor_sync_key] = saved_rules.get("bsc_minor", [])
-    if bsc_mdc_sync_key not in st.session_state: st.session_state[bsc_mdc_sync_key] = saved_rules.get("bsc_mdc", [])
-    if bsc_voc_sync_key not in st.session_state: st.session_state[bsc_voc_sync_key] = saved_rules.get("bsc_voc", [])
+    if bsc_minor_sync_key not in st.session_state: st.session_state[bsc_minor_sync_key] = []
+    if bsc_mdc_sync_key not in st.session_state: st.session_state[bsc_mdc_sync_key] = []
+    if bsc_voc_sync_key not in st.session_state: st.session_state[bsc_voc_sync_key] = []
 
     rules = {}
     
@@ -182,7 +168,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
             default_pw_selection.extend(internship_opts)
             default_pw_selection = list(set(default_pw_selection))
             
-        # --- 4 कॉलम्स का लेआउट (Minor, MDC, Vocational, PW) ---
+        # --- 4 कॉलम्स का लेआउट ---
         c1, c2, c3, c4 = st.columns(4)
         
         with c1:
@@ -190,20 +176,6 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
                 r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[ba_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
                 if r_minor != st.session_state[ba_minor_sync_key]:
                     st.session_state[ba_minor_sync_key] = r_minor
-                    st.rerun()
-            elif is_bsc_course:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
-                if r_minor != st.session_state[bsc_minor_sync_key]:
-                    st.session_state[bsc_minor_sync_key] = r_minor
-                    st.rerun()
-            else:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, key=f"minor_sync_{prefix}_{idx}")
-                
-        with c2:
-            if is_ba_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
-                if r_mdc != st.session_state[ba_mdc_sync_key]:
-                    st.session_state[ba_mdc_sync_key] = r_mdc
                     st.rerun()
             elif is_bsc_course:
                 r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
@@ -244,47 +216,12 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         with c4:
             r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_sync_{prefix}_{idx}")
             
-        # सभी सिलेक्टेड विषयों को नियमों (Rules Mapping Array) में लॉक करना
         rules[combo] = {
             "minor": {str(x).strip().lower() for x in r_minor},
             "mdc": {str(x).strip().lower() for x in r_mdc},
             "voc": {str(x).strip().lower() for x in r_voc},
             "pw": {str(x).strip().lower() for x in r_pw}
         }
-
-    # --- 🔒 P3/P4 के लिए नियम लॉक करने का परमानेंट बटन ---
-    st.divider()
-    st.markdown(f"### 🔒 {prefix.upper()} विषय गाइडलाइन हमेशा के लिए सुरक्षित करें")
-    if st.button(f"🔒 {prefix.upper()} पैनल के सभी विषय नियम लॉक करें", key=f"lock_btn_{prefix}"):
-        master_rules = {
-            "ba_minor": st.session_state.get(ba_minor_sync_key, []),
-            "ba_mdc": st.session_state.get(ba_mdc_sync_key, []),
-            "ba_voc": st.session_state.get(ba_voc_sync_key, []),
-            "bsc_minor": st.session_state.get(bsc_minor_sync_key, []),
-            "bsc_mdc": st.session_state.get(bsc_mdc_sync_key, []),
-            "bsc_voc": st.session_state.get(bsc_voc_sync_key, [])
-        }
-        cursor.execute("INSERT OR REPLACE INTO locked_rules (panel_prefix, rules_json) VALUES (?, ?)", (prefix, json.dumps(master_rules)))
-        conn.commit()
-        st.success(f"🎉 आपके चुने हुए ड्रॉपडाउन विषय डेटाबेस में लॉक हो गए! अब छात्र सूची डिलीट होने पर भी विषय गायब नहीं होंगे।")
-        st.balloons()
-
-    # --- डेटाबेस से पुराने लॉक किए गए नियमों को डिफ़ॉल्ट रूप से स्वतः भरने का लॉजिक ---
-    cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = ?", (prefix,))
-    locked_row = cursor.fetchone()
-    if locked_row and locked_row[0]:
-        try:
-            saved_rules = json.loads(locked_row[0])
-            # अगर सेशन स्टेट अभी खाली है, तो डेटाबेस से लॉक विषय स्वतः भर जाएँगे
-            if not st.session_state[ba_minor_sync_key] and saved_rules.get("ba_minor"): st.session_state[ba_minor_sync_key] = saved_rules["ba_minor"]
-            if not st.session_state[ba_mdc_sync_key] and saved_rules.get("ba_mdc"): st.session_state[ba_mdc_sync_key] = saved_rules["ba_mdc"]
-            if not st.session_state[ba_voc_sync_key] and saved_rules.get("ba_voc"): st.session_state[ba_voc_sync_key] = saved_rules["ba_voc"]
-            
-            if not st.session_state[bsc_minor_sync_key] and saved_rules.get("bsc_minor"): st.session_state[bsc_minor_sync_key] = saved_rules["bsc_minor"]
-            if not st.session_state[bsc_mdc_sync_key] and saved_rules.get("bsc_mdc"): st.session_state[bsc_mdc_sync_key] = saved_rules["bsc_mdc"]
-            if not st.session_state[bsc_voc_sync_key] and saved_rules.get("bsc_voc"): st.session_state[bsc_voc_sync_key] = saved_rules["bsc_voc"]
-        except:
-            pass
 
     # --- लाइव वैरिफिकेशन स्टाइलर फ़ंक्शन ---
     def cell_styler(dataframe):
@@ -301,14 +238,12 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
                 if pd.isna(b_val) or str(b_val).strip() == "":
                     s_df.at[index, br_col] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
             
-            # Minor, MDC, VOC, PW कॉलम्स की सटीक चेकिंग और लाइव हाइलाइटिंग
+            # Minor, MDC, VOC, PW कॉलम्स की सटीक चेकिंग
             for col_name, rule_key in targets.items():
                 if col_name and col_name in dataframe.columns:
                     val = row[col_name]
-                    # 🔵 नीला सेल = डेटा गायब है
                     if pd.isna(val) or str(val).strip() == "":
                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-                    # 🔴 लाल सेल = गलत विषय (वैध सूची में न होने पर तुरंत लाल होगा)
                     else:
                         val_clean = str(val).strip().lower()
                         valid_set = c_rule[rule_key]
@@ -343,6 +278,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         
         targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
         
+        # एक्सेल शीट में प्रत्येक सेल की लूपिंग और कलर कोडिंग
         for idx, row in display_df.iterrows():
             row_num = idx + 2 # हेडर छोड़ने के लिए +2
             c_val = str(row[deg_col]) + " - " + str(row[br_col])
@@ -358,7 +294,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
                         cell.fill = blue_fill
                         cell.border = thin_border
                 
-                # MDC, VOC, PW कॉलम्स के मिसमैच को लाल/नीला करना
+                # Minor, MDC, VOC, PW कॉलम्स के मिसमैच को लाल/नीला करना
                 if col_name in targets_xl:
                     val = row[col_name]
                     rule_key = targets_xl[col_name]
@@ -418,12 +354,20 @@ if panel == "📥 1. Entry / Upload Panel":
             st.error(f"त्रुटि: {e}")
 
 # =========================================================================
-# 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम मूव + लाइव स्प्लिट + डेटाबेस रूटिंग)
+# 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम मूव + लाइव स्प्लिट + नियम लॉक / रूटिंग)
 # =========================================================================
 elif panel == "💻 2. Work / Approve Panel":
     st.title("💻 Work / Approve Panel - डेटा प्रोसेसिंग एवं अप्रूवल")
     
-    # Panel 1 से ट्रांसफर होकर आया हुआ Staging (Raw) डेटा लोड करना
+    # नियमों को परमानेंट सुरक्षित रखने के लिए डेटाबेस टेबल बनाना (यदि पहले से न हो)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS locked_rules (
+            course_type TEXT PRIMARY KEY,
+            rules_json TEXT
+        )
+    """)
+    conn.commit()
+    
     raw_df = load_raw_data()
     
     if raw_df is None or raw_df.empty:
@@ -466,7 +410,6 @@ elif panel == "💻 2. Work / Approve Panel":
         # --- कार्य 3: विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करना ---
         st.divider()
         st.subheader("❌ विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करें")
-        st.write("यदि आप किसी खास कोर्स या स्ट्रीम का पूरा डेटा हटाना चाहते हैं, तो यहाँ से चुनें:")
         
         c_row1, c_row2 = st.columns(2)
         with c_row1:
@@ -489,7 +432,7 @@ elif panel == "💻 2. Work / Approve Panel":
                 if filtered_rows:
                     cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(filtered_rows),))
                 conn.commit()
-                st.success("🎉  चयनित डिग्री/ब्रांच की सभी रोज़ को सफलतापूर्वक डिलीट कर दिया गया है!")
+                st.success("🎉 चयनित डिग्री/ब्रांच की सभी रोज़ को सफलतापूर्वक डिलीट कर दिया गया है!")
                 st.rerun()
 
         # फ़िल्टर्ड और रीऑर्डर किए गए डेटा का लाइव प्रीव्यू दिखाना
@@ -500,6 +443,7 @@ elif panel == "💻 2. Work / Approve Panel":
         el_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['elig', 'qual', 'class', 'course', 'deg'])), final_raw_df.columns)
         st.info(f"🔍 सिस्टम ऑटो-वर्गीकरण के लिए **'{el_col}'** कॉलम का उपयोग कर रहा है।")
         
+        # --- कार्य 4: लाइव प्री-विभाजन समीक्षा ---
         st.subheader("👀 लाइव प्री-विभाजन समीक्षा (Live Split Preview)")
         ug_preview_rows = []
         pg_preview_rows = []
@@ -523,7 +467,7 @@ elif panel == "💻 2. Work / Approve Panel":
             if not df_pg_preview.empty: st.dataframe(df_pg_preview, height=250, use_container_width=True)
             else: st.caption("कोई डेटा PG श्रेणी में नहीं मिला।")
 
-        # --- कार्य 4: फाइनल अप्रूवल और रूटिंग एक्शन (नया क्रम डेटाबेस में लॉक होगा) ---
+        # panel 2 के बिल्कुल अंत में मौजूद '🚀 FINAL ACTION' को इस हिस्से से बदलें
         st.divider()
         st.subheader("🚀 FINAL ACTION")
         st.write("📈 **डेटा ट्रांसफर:** क्लीन और रीऑर्डर किए गए छात्रों के डेटा को आगे UG (P3) और PG (P4) पैनल में भेजने के लिए यह बटन दबाएँ।")
@@ -543,139 +487,115 @@ elif panel == "💻 2. Work / Approve Panel":
             st.rerun()
 
 # =========================================================================
-# 🎓 PANEL 3: UG PANEL
+# 🎓 PANEL 3: UG PANEL (Approved UG Data Verification & Subject Rules Setup)
 # =========================================================================
 elif panel == "🎓 3. UG Panel":
     st.title("🎓 Undergraduate (UG) चेकिंग एवं त्रुटि सुधार पैनल")
+    st.write("यहाँ Panel 2 से अप्रूव होकर आया हुआ शुद्ध UG डेटा प्रदर्शित हो रहा है।")
+    
+    # Permanent database से केवल UG का डेटा लोड करना
     df_ug = load_permanent_data("UG")
-    if df_ug is None or df_ug.empty: 
-        st.info("ℹ️ UG डेटाबेस खाली है।")
-    else: 
-        process_panel_validation(df_ug, "ug", ["ba", "bsc", "bcom", "bhsc", "12th", "bba", "bca", "btech", "llb"])
+    
+    if df_ug is None or df_ug.empty:
+        st.info("ℹ️ UG डेटाबेस में अभी कोई डेटा लॉक नहीं है। कृपया पहले **Panel 2 (Work / Approve Panel)** में जाकर डेटा अप्रूव करें।")
+    else:
+        # आवश्यक कोर्सेस/डिग्री की सूची जिन्हें इस UG पैनल में प्रोसेस करना है
+        allowed_ug_degrees = ["ba", "bsc", "bcom", "bhsc", "12th", "bba", "bca", "btech", "llb"]
+        
+        # कोर वैलिडेशन, मास्टर एमडीसी सिंक और लाइव हाइलाइटिंग टेबल को रन करना
+        # यह फ़ंक्शन गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
+        process_panel_validation(df_ug, "ug", allowed_ug_degrees)
 
 # =========================================================================
-# 📜 PANEL 4: PG PANEL
+# 📜 PANEL 4: PG PANEL (Approved PG Data Verification & Subject Rules Setup)
 # =========================================================================
 elif panel == "📜 4. PG Panel":
     st.title("📜 Postgraduate (PG) चेकिंग एवं त्रुटि सुधार पैनल")
+    st.write("यहाँ Panel 2 से अप्रूव होकर आया हुआ शुद्ध PG डेटा प्रदर्शित हो रहा है।")
+    
+    # Permanent database से केवल PG का डेटा लोड करना
     df_pg = load_permanent_data("PG")
-    if df_pg is None or df_pg.empty: 
-        st.info("ℹ️ PG डेटाबेस खाली है।")
-    else: 
-        process_panel_validation(df_pg, "pg", ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"])
-
-# =========================================================================
-# 📊 NEW PANEL 5: DASHBOARD / COUNTER PANEL (Minor, MDC, Voc, PW Count Engine)
-# =========================================================================
-elif panel == "📊 5. Dashboard / Counter Panel":
-    st.title("📊 Dashboard - कुल कोर्सेस एवं विषयों की लाइव संख्या")
-    st.write("यहाँ आपके डेटाबेस (UG + PG दोनों मिलाकर) में उपयोग हो रहे सभी अनूठे (Unique) विषयों और कोर्सेस की वास्तविक कुल संख्या प्रदर्शित हो रही है:")
     
-    # दोनों डेटाबेसों को मिलाकर कंबाइंड मास्टर डेटाफ़्रेम तैयार करना
-    df_ug_all = load_permanent_data("UG")
-    df_pg_all = load_permanent_data("PG")
-    
-    all_dfs = []
-    if df_ug_all is not None and not df_ug_all.empty: all_dfs.append(df_ug_all)
-    if df_pg_all is not None and not df_pg_all.empty: all_dfs.append(df_pg_all)
-    
-    if not all_dfs:
-        st.info("ℹ️ काउंट प्रदर्शित करने के लिए डेटाबेस में कोई डेटा उपलब्ध नहीं है। कृपया पहले Panel 2 से डेटा अप्रूव करें।")
+    if df_pg is None or df_pg.empty:
+        st.info("ℹ️ PG डेटाबेस में अभी कोई डेटा लॉक नहीं है। कृपया पहले **Panel 2 (Work / Approve Panel)** में जाकर डेटा अप्रूव करें।")
     else:
-        master_df = pd.concat(all_dfs, ignore_index=True)
+        # आवश्यक कोर्सेस/डिग्री की सूची जिन्हें इस PG पैनल में प्रोसेस करना है
+        allowed_pg_degrees = ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"]
         
-        # ऑटो-कॉलम डिटेक्शन इंजन
-        c_br = next((c for c in master_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), None)
-        c_minor = next((c for c in master_df.columns if 'minor' in c.lower()), None)
-        c_mdc = next((c for c in master_df.columns if 'mdc' in c.lower()), None)
-        c_voc = next((c for c in master_df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
-        c_pw = next((c for c in master_df.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
-        
-        # यूनीक वैल्यूज की गणना करना
-        count_br = master_df[c_br].dropna().nunique() if c_br else 0
-        count_minor = master_df[c_minor].dropna().nunique() if c_minor else 0
-        count_mdc = master_df[c_mdc].dropna().nunique() if c_mdc else 0
-        count_voc = master_df[c_voc].dropna().nunique() if c_voc else 0
-        count_pw = master_df[c_pw].dropna().nunique() if c_pw else 0
-        
-        # 📈 विज़ुअल काउंटर मेट्रिक्स रेंडर करना
-        st.divider()
-        col1, col2, col3 = st.columns(3)
-        with col1: st.metric(label="🌟 कुल अनूठी ब्रांचेस (Total Unique Branches)", value=f"{count_br}")
-        with col2: st.metric(label="📘 कुल अनूठे माइनर विषय (Unique Minor Subjects)", value=f"{count_minor}")
-        with col3: st.metric(label="📙 कुल अनूठे एमडीसी विषय (Unique MDC Subjects)", value=f"{count_mdc}")
-        
-        st.divider()
-        col4, col5 = st.columns(2)
-        with col4: st.metric(label="🛠️ कुल अनूठे वोकेशनल विषय (Unique Vocational Subjects)", value=f"{count_voc}")
-        with col5: st.metric(label="🔬 कुल अनूठे प्रोजेक्ट/CE प्रकार (Unique PW/Ap/CE)", value=f"{count_pw}")
-        
-        # सूचियों का लाइव विवरण दिखाना (Tabs के अंदर)
-        st.divider()
-        st.subheader("📋 उपयोग हो रहे सभी विषयों की लाइव मास्टर लिस्ट")
-        tab_br, tab_mn, tab_md, tab_vc, tab_p = st.tabs(["Branches", "Minor List", "MDC List", "Vocational List", "Project List"])
-        
-        with tab_br: 
-            if c_br: st.write(master_df[c_br].dropna().unique().tolist())
-        with tab_mn: 
-            if c_minor: st.write(master_df[c_minor].dropna().unique().tolist())
-        with tab_md: 
-            if c_mdc: st.write(master_df[c_mdc].dropna().unique().tolist())
-        with tab_vc: 
-            if c_voc: st.write(master_df[c_voc].dropna().unique().tolist())
-        with tab_p: 
-            if c_pw: st.write(master_df[c_pw].dropna().unique().tolist())
+        # कोर वैलिडेशन और लाइव हाइलाइटिंग टेबल को रन करना
+        # यह फ़ंक्शन गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
+        process_panel_validation(df_pg, "pg", allowed_pg_degrees)
 
 # =========================================================================
-# ⚙️ PANEL 6: ADMIN PANEL
+# ⚙️ PANEL 5: ADMIN PANEL (Master Controls, CSV Backup Generation & Reset Ops)
 # =========================================================================
-elif panel == "⚙️ 6. Admin Panel":
+elif panel == "⚙️ 5. Admin Panel":
     st.title("⚙️ Admin Panel - मास्टर डेटाबेस कंट्रोल")
+    st.write("यह केवल एडमिनिस्ट्रेटर के लिए है। यहाँ से आप पूरे डेटा का बैकअप ले सकते हैं और सिस्टम को रीसेट कर सकते हैं।")
     
+    # 📥 Section 1: Data Backup & Multi-Format Exports
+    st.divider()
+    st.subheader("📥 डेटाबेस बैकअप डाउनलोड करें")
+    st.write("डेटाबेस खाली करने से पहले या काम पूरा होने पर आप यहाँ से फ़ाइल डाउनलोड कर सकते हैं।")
+    
+    # Load separate permanent storage datasets for distribution routing checks
     df_ug_download = load_permanent_data("UG")
     df_pg_download = load_permanent_data("PG")
     
-    st.subheader("📥 डेटाबेस बैकअप डाउनलोड करें")
     c1, c2 = st.columns(2)
+    
     with c1:
         st.markdown("#### 🎓 UG डेटा बैकअप")
         if df_ug_download is not None and not df_ug_download.empty:
+            st.success(f"कुल रिकॉर्ड्स उपलब्ध: {len(df_ug_download)}")
+            # Flatten to clean UTF-8 CSV layout structures
+            csv_ug = df_ug_download.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 UG डेटा CSV डाउनलोड करें", 
-                data=df_ug_download.to_csv(index=False).encode('utf-8'), 
-                file_name="Approved_UG_Data_Backup.csv", 
-                mime="text/csv"
+                label="📥 UG डेटा CSV डाउनलोड करें",
+                data=csv_ug,
+                file_name="Approved_UG_Data_Backup.csv",
+                mime="text/csv",
+                key="download_ug_csv"
             )
-        else: 
-            st.info("UG डेटाबेस खाली है।")
+        else:
+            st.info("UG डेटाबेस में डाउनलोड के लिए कोई डेटा नहीं है।")
             
     with c2:
         st.markdown("#### 📜 PG डेटा बैकअप")
         if df_pg_download is not None and not df_pg_download.empty:
+            st.success(f"कुल रिकॉर्ड्स उपलब्ध: {len(df_pg_download)}")
+            # Flatten to clean UTF-8 CSV layout structures
+            csv_pg = df_pg_download.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 PG डेटा CSV डाउनलोड करें", 
-                data=df_pg_download.to_csv(index=False).encode('utf-8'), 
-                file_name="Approved_PG_Data_Backup.csv", 
-                mime="text/csv"
+                label="📥 PG डेटा CSV डाउनलोड करें",
+                data=csv_pg,
+                file_name="Approved_PG_Data_Backup.csv",
+                mime="text/csv",
+                key="download_pg_csv"
             )
-        else: 
-            st.info("PG डेटाबेस खाली है।")
+        else:
+            st.info("PG डेटाबेस में डाउनलोड के लिए कोई डेटा नहीं है।")
 
+    # 🚨 Section 2: Danger Zone System Truncate Routines
     st.divider()
-    st.subheader("🚨 डेंजर ज़ोन")
+    st.subheader("🚨 डेंजर ज़ोन (Danger Zone)")
+    st.warning("सावधान: यहाँ से किया गया बदलाव पूरे सिस्टम के डेटा को हमेशा के लिए मिटा देगा।")
+    
+    # Double-lock affirmation constraint validation to shield from click errors
     confirm_reset = st.checkbox("मैं पूरे सिस्टम (रॉ + अप्रूव्ड दोनों डेटाबेस) को रीसेट करने की पुष्टि करता हूँ।")
-    if st.button("💥 ऑल डेटाबेस रीसेट करें"):
+    
+    if st.button("💥 ऑल डेटाबेस रीसेट करें (Reset System)"):
         if confirm_reset:
+            # Wipe active staged temporary tables and locked historical frames
             cursor.execute("DELETE FROM raw_store")
             cursor.execute("DELETE FROM perma_store")
-            cursor.execute("DELETE FROM locked_rules") # रीसेट करने पर नियमों की लॉक टेबल भी साफ़ होगी
             conn.commit()
+            
+            # Clear column masking metrics arrays out of state maps
             st.session_state["deleted_cols"] = []
-            st.success("सिस्टम पूरी तरह से रीसेट हो गया है!")
+            
+            st.success("🎉 सिस्टम को सफलतापूर्वक रीसेट कर दिया गया है! सभी टेबल्स खाली हो चुके हैं।")
+            st.balloons()
             st.rerun()
-        else: 
-            st.error("कृपया पहले पुष्टि चेकबॉक्स पर टिक करें।")
-
-
-
-
+        else:
+            st.error("त्रुटि: कृपया डेटाबेस खाली करने से पहले ऊपर दिए गए 'पुष्टि चेकबॉक्स' को टिक करें।")
