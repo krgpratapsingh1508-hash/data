@@ -649,47 +649,60 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 st.divider()
                 
                 # ---------------------------------------------------------
-                # भाग 2: विस्तृत छात्र डेटा तालिका (Detailed Data View)
+                # भाग 2: विस्तृत छात्र डेटा तालिका (Show/Hide Button Control Enabled)
                 # ---------------------------------------------------------
-                st.markdown(f"### 📋 {deg_info['display']} के सभी छात्रों का विस्तृत डेटा")
-                st.write(f"वर्तमान में इस डिग्री में कुल **{len(df_deg_filtered)}** छात्र रिकॉर्ड उपलब्ध हैं।")
+                st.markdown(f"### 📋 {deg_info['display']} के छात्रों का विस्तृत डेटा")
                 
-                # लाइव सर्च बार फीचर
-                search_query = st.text_input(
-                    f"🔍 {deg_info['display']} डेटा में सर्च करें (नाम, रोल नंबर या विषय डालें):", 
-                    key=f"search_{deg_info['display']}"
+                # 🔒 जादुई बटन: डिफ़ॉल्ट रूप से False (यानी छात्रों की लिस्ट हमेशा छिपी रहेगी)
+                show_full_list = st.checkbox(
+                    f"👀 {deg_info['display']} की पूरी छात्र सूची देखें (Show Student List)", 
+                    value=False, 
+                    key=f"toggle_list_{deg_info['display']}"
                 )
                 
-                df_to_show = df_deg_filtered.copy()
-                if search_query:
-                    mask = df_to_show.astype(str).apply(lambda row: row.str.contains(search_query, case=False).any(), axis=1)
-                    df_to_show = df_to_show[mask]
-                
-                # पूरी टेबल का लाइव मिसमैच स्टाइलर (गलत विषय लाल रंग में चमकेंगे)
-                def full_table_styler(dataframe):
-                    s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
-                    targets = {minor_col: 'minor', mdc_col: 'mdc', voc_col: 'voc', pw_col: 'pw'}
+                # अगर बटन पर टिक किया गया है (True है), तभी अंदर का सर्च बार और टेबल दिखाई देगी
+                if show_full_list:
+                    st.write(f"वर्तमान में इस डिग्री में कुल **{len(df_deg_filtered)}** छात्र रिकॉर्ड उपलब्ध हैं।")
                     
-                    for index, row in dataframe.iterrows():
-                        for col_name, rule_key in targets.items():
-                            if col_name and col_name in dataframe.columns:
-                                val = row[col_name]
-                                if pd.isna(val) or str(val).strip() == "":
-                                    s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold;'
-                                else:
-                                    val_clean = str(val).strip().lower()
-                                    valid_list = deg_rule.get(rule_key, [])
-                                    valid_set = {str(x).strip().lower() for x in valid_list}
-                                    if valid_set and (val_clean not in valid_set):
-                                        s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'
-                    return s_df
+                    # लाइव सर्च बार फीचर
+                    search_query = st.text_input(
+                        f"🔍 {deg_info['display']} डेटा में सर्च करें (नाम, रोल नंबर या विषय डालें):", 
+                        key=f"search_{deg_info['display']}"
+                    )
+                    
+                    df_to_show = df_deg_filtered.copy()
+                    if search_query:
+                        mask = df_to_show.astype(str).apply(lambda row: row.str.contains(search_query, case=False).any(), axis=1)
+                        df_to_show = df_to_show[mask]
+                    
+                    # पूरी टेबल का लाइव मिसमैच स्टाइलर (गलत विषय लाल रंग में चमकेंगे)
+                    def full_table_styler(dataframe):
+                        s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
+                        targets = {minor_col: 'minor', mdc_col: 'mdc', voc_col: 'voc', pw_col: 'pw'}
+                        
+                        for index, row in dataframe.iterrows():
+                            for col_name, rule_key in targets.items():
+                                if col_name and col_name in dataframe.columns:
+                                    val = row[col_name]
+                                    if pd.isna(val) or str(val).strip() == "":
+                                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold;'
+                                    else:
+                                        val_clean = str(val).strip().lower()
+                                        valid_list = deg_rule.get(rule_key, [])
+                                        valid_set = {str(x).strip().lower() for x in valid_list}
+                                        if valid_set and (val_clean not in valid_set):
+                                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'
+                        return s_df
 
-                # ✨ यह कोड अब 'return s_df' के बिल्कुल नीचे, फ़ंक्शन के ठीक बाहर सही तरीके से सेट है
-                st.dataframe(
-                    df_to_show.style.apply(full_table_styler, axis=None),
-                    height=400,
-                    use_container_width=True
-                )
+                    # मुख्य डेटाबेस ग्रिड व्यूअर
+                    st.dataframe(
+                        df_to_show.style.apply(full_table_styler, axis=None),
+                        height=400,
+                        use_container_width=True
+                    )
+                else:
+                    # जब बटन बंद होगा, तो यह छोटा सा संदेश दिखेगा और बड़ी लिस्ट छिपी रहेगी
+                    st.info(f"ℹ️ {deg_info['display']} छात्र सूची वर्तमान में छिपी (Hidden) है। देखने के लिए ऊपर दिए गए चेकबॉक्स पर टिक करें।")
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
