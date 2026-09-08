@@ -609,13 +609,16 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                         counts.columns = ["Subject Name\n(विषय का नाम)", "Total Students\n(कुल छात्र)"]
                         
                         if not counts.empty:
-                            # वैध विषयों की सेट तैयार करना (केस-इंसेंसिटिव चेकिंग के लिए)
+                            #  इस नए और सही कोड को पेस्ट करें
+                            # वैध विषयों की सेट तैयार करना
                             valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
                             
-                            # स्टाइलर फ़ंक्शन: जो मास्टर नियम में नहीं है उसे लाल करना
+                            # स्टाइलर फ़ंक्शन (अपडेटेड हेडर नाम के साथ)
                             def row_styler(row):
-                                sub_val = str(row['विषय का नाम (Subject Name)']).strip().lower()
-                                # अगर नियम सेट हैं और छात्र का विषय उसमें नहीं है, तो पूरी रो लाल करें
+                                # अब यह नए हेडर नाम "Subject Name\n(विषय का नाम)" को ढूंढेगा
+                                sub_val = str(row["Subject Name\n(विषय का नाम)"]).strip().lower()
+                                
+                                # यदि विषय मास्टर नियम सूची में मौजूद नहीं है तो रो को लाल (Red) करें
                                 if valid_subjects_set and (sub_val not in valid_subjects_set):
                                     return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
                                 return [''] * len(row)
