@@ -604,7 +604,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
                         # काउंट निकालना और वैल्यूज कलेक्ट करना
                         counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
-                        counts.columns = ['विषय का नाम <b> (Subject Name)', 'कुल छात्र <b> (Count)']
+                        counts.columns = ['विषय का नाम (Subject Name)', 'कुल छात्र (Count)']
                         
                         if not counts.empty:
                             # वैध विषयों की सेट तैयार करना (केस-इंसेंसिटिव चेकिंग के लिए)
