@@ -88,7 +88,7 @@ def load_permanent_data(c_type):
     return None
 
 # =========================================================================
-# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग एवं प्रोजेक्ट/इंटरर्नशिप डिफ़ॉल्ट लॉजिक
+# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA MDC सिंक नियम
 # =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
@@ -105,7 +105,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         return
 
     minor_col = next((c for c in df_filtered.columns if 'minor' in c.lower()), None)
-    mdc_col = next((c for c in df_filtered.columns if 'mdc' in c.lower()), None)
+    st.session_state["mdc_col"] = next((c for c in df_filtered.columns if 'mdc' in c.lower()), None)
     voc_col = next((c for c in df_filtered.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
     pw_col = next((c for c in df_filtered.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
 
@@ -114,35 +114,52 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     
     st.subheader("📋 स्टेप 1: डिग्री + ब्रांच के अनुसार सही विषय सेट करें")
     
-    opt_mdc = df_filtered[mdc_col].dropna().unique().tolist() if (mdc_col and mdc_col in df_filtered.columns) else []
+    opt_mdc = df_filtered[st.session_state["mdc_col"]].dropna().unique().tolist() if (st.session_state["mdc_col"] and st.session_state["mdc_col"] in df_filtered.columns) else []
     opt_voc = df_filtered[voc_col].dropna().unique().tolist() if (voc_col and voc_col in df_filtered.columns) else []
     opt_pw = df_filtered[pw_col].dropna().unique().tolist() if (pw_col and pw_col in df_filtered.columns) else []
     
+    # --- BA MDC मास्टर सिंक स्टेट मैनेजमेंट ---
+    ba_sync_key = f"ba_mdc_master_sync_{prefix}"
+    if ba_sync_key not in st.session_state:
+        st.session_state[ba_sync_key] = []
+
     rules = {}
+    
+    # यदि कोई भी BA कॉम्बिनेशन है, तो सबसे ऊपर एक कॉमन BA MDC सेलेक्टर दिखाना
+    has_ba = any("ba-" in combo.lower().replace(".", "").replace(" ", "") or combo.lower().startswith("ba ") for combo in unique_combos)
+    
+    if has_ba:
+        st.info("💡 **BA स्पेशल रूल:** आप नीचे किसी भी BA कोर्स का MDC बदलेंगे, वह सभी BA कोर्सेस में एक साथ लागू हो जाएगा।")
+    
     for idx, combo in enumerate(unique_combos):
         st.markdown(f"#### 📍 `{combo}`")
         c1, c2, c3 = st.columns(3)
         
         combo_lower = combo.lower().replace(".", "").replace(" ", "")
+        is_ba_course = "ba-" in combo_lower or combo_lower.startswith("ba") and not combo_lower.startswith("ba(ex") and "bsc" not in combo_lower and "bcom" not in combo_lower
         
-        # --- सख्त डिफ़ॉल्ट नियम (Strict Default Rule) ---
-        # केवल वही वैल्यू चुनना जिसका नाम बिल्कुल "Project Work" या "Project" से शुरू हो या मेल खाए
+        # --- सख्त डिफ़ॉल्ट नियम (No Research Project) ---
         default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw"]]
-        
-        # अगर डेटाबेस में थोड़ा अलग नाम है, तो सुरक्षा के लिए सर्च फ़िल्टर लगा रहे हैं
         if not default_pw_selection:
-            default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower()]
+            default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() and 'research' not in str(x).lower()]
 
         # --- विशेष छूट नियम: B.Sc. Bio / Biotech के लिए ---
-        # यदि डिग्री bsc है और ब्रांच में 'bio' या 'biotech' शब्द आता है
         if "bsc" in combo_lower and ("biotech" in combo_lower or "bio" in combo_lower):
-            # केवल इस कोर्स के लिए 'Internship' वाले विकल्प को भी डिफ़ॉल्ट में शामिल करें
             internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
             default_pw_selection.extend(internship_opts)
-            default_pw_selection = list(set(default_pw_selection)) # डुप्लिकेट साफ़ करना
+            default_pw_selection = list(set(default_pw_selection))
             
         with c1: 
-            r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
+            # BA के लिए सिंक वैल्यू मैनेज करना
+            if is_ba_course:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_sync_key], key=f"mdc_{prefix}_{idx}")
+                # यदि इस वाले बॉक्स में कोई बदलाव हुआ, तो मास्टर स्टेट अपडेट करें और रीरन करें ताकि बाकी BA बॉक्स अपडेट हो जाएं
+                if r_mdc != st.session_state[ba_sync_key]:
+                    st.session_state[ba_sync_key] = r_mdc
+                    st.rerun()
+            else:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
+                
         with c2: 
             r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
         with c3: 
@@ -156,7 +173,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
 
     def cell_styler(dataframe):
         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
-        targets = {mdc_col: 'mdc', voc_col: 'voc', pw_col: 'pw'}
+        targets = {st.session_state["mdc_col"]: 'mdc', voc_col: 'voc', pw_col: 'pw'}
         
         for index, row in dataframe.iterrows():
             c_val = str(row[deg_col]) + " - " + str(row[br_col])
