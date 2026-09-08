@@ -553,9 +553,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
         target_degrees = [
             {"display": "BA", "keywords": ["ba"]},
             {"display": "B.Com.", "keywords": ["bcom"], "exclude": ["computer"]},
-            {"display": "B.Com. Computer", "keywords": ["bcom", "computer"]},
             {"display": "B.Sc.", "keywords": ["bsc"], "exclude": ["biotech"]},
-            {"display": "B.Sc. Biotechnology", "keywords": ["bsc", "biotech"]},
             {"display": "B.H.Sc.", "keywords": ["bhsc"]}
         ]
 
