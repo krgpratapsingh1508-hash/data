@@ -513,13 +513,13 @@ elif panel == "📜 4. PG Panel":
         process_panel_validation(df_pg, "pg", ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"])
 
 # =========================================================================
-# 📊 NEW PANEL 5: DASHBOARD / COUNTER PANEL (Minor, MDC, Voc, PW Count Engine)
+# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (एडवांस डिग्री-वाइज लाइव वैलिडेशन काउंटर)
 # =========================================================================
 elif panel == "📊 5. Dashboard / Counter Panel":
-    st.title("📊 Dashboard - कुल कोर्सेस एवं विषयों की लाइव संख्या")
-    st.write("यहाँ आपके डेटाबेस (UG + PG दोनों मिलाकर) में उपयोग हो रहे सभी अनूठे (Unique) विषयों और कोर्सेस की वास्तविक कुल संख्या प्रदर्शित हो रही है:")
+    st.title("📊 Dashboard - डिग्री-वाइज विषयों की लाइव गणना एवं त्रुटि सुधार")
+    st.write("यहाँ प्रत्येक डिग्री के अनुसार उपयोग हो रहे विषयों के नाम, छात्रों की संख्या और उनकी वैधता (मास्टर नियमों के अनुसार) लाइव प्रदर्शित हो रही है।")
     
-    # दोनों डेटाबेसों को मिलाकर कंबाइंड मास्टर डेटाफ़्रेम तैयार करना
+    # UG और PG दोनों का डेटा लोड करना
     df_ug_all = load_permanent_data("UG")
     df_pg_all = load_permanent_data("PG")
     
@@ -533,46 +533,104 @@ elif panel == "📊 5. Dashboard / Counter Panel":
         master_df = pd.concat(all_dfs, ignore_index=True)
         
         # ऑटो-कॉलम डिटेक्शन इंजन
-        c_br = next((c for c in master_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), None)
-        c_minor = next((c for c in master_df.columns if 'minor' in c.lower()), None)
-        c_mdc = next((c for c in master_df.columns if 'mdc' in c.lower()), None)
-        c_voc = next((c for c in master_df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
-        c_pw = next((c for c in master_df.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+        deg_col = next((c for c in master_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), None)
+        minor_col = next((c for c in master_df.columns if 'minor' in c.lower()), None)
+        mdc_col = next((c for c in master_df.columns if 'mdc' in c.lower()), None)
+        voc_col = next((c for c in master_df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
+        pw_col = next((c for c in master_df.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
         
-        # यूनीक वैल्यूज की गणना करना
-        count_br = master_df[c_br].dropna().nunique() if c_br else 0
-        count_minor = master_df[c_minor].dropna().nunique() if c_minor else 0
-        count_mdc = master_df[c_mdc].dropna().nunique() if c_mdc else 0
-        count_voc = master_df[c_voc].dropna().nunique() if c_voc else 0
-        count_pw = master_df[c_pw].dropna().nunique() if c_pw else 0
-        
-        # 📈 विज़ुअल काउंटर मेट्रिक्स रेंडर करना
+        # 🔒 डेटाबेस से UG मास्टर नियमों को सुरक्षित लोड करना (ताकि गलत विषयों को लाल कर सकें)
+        ug_master_rules = {}
+        try:
+            cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
+            locked_row = cursor.fetchone()
+            if locked_row and locked_row[0]:
+                ug_master_rules = json.loads(locked_row[0])
+        except:
+            pass
+
+        # आपकी मांगी गई विशिष्ट डिग्रियां (सटीक मैपिंग के लिए)
+        target_degrees = [
+            {"display": "BA", "keywords": ["ba"]},
+            {"display": "B.Com.", "keywords": ["bcom"], "exclude": ["computer"]},
+            {"display": "B.Com. Computer", "keywords": ["bcom", "computer"]},
+            {"display": "B.Sc.", "keywords": ["bsc"], "exclude": ["biotech"]},
+            {"display": "B.Sc. Biotechnology", "keywords": ["bsc", "biotech"]},
+            {"display": "B.H.Sc.", "keywords": ["bhsc"]}
+        ]
+
         st.divider()
-        col1, col2, col3 = st.columns(3)
-        with col1: st.metric(label="🌟 कुल अनूठी ब्रांचेस (Total Unique Branches)", value=f"{count_br}")
-        with col2: st.metric(label="📘 कुल अनूठे माइनर विषय (Unique Minor Subjects)", value=f"{count_minor}")
-        with col3: st.metric(label="📙 कुल अनूठे एमडीसी विषय (Unique MDC Subjects)", value=f"{count_mdc}")
         
-        st.divider()
-        col4, col5 = st.columns(2)
-        with col4: st.metric(label="🛠️ कुल अनूठे वोकेशनल विषय (Unique Vocational Subjects)", value=f"{count_voc}")
-        with col5: st.metric(label="🔬 कुल अनूठे प्रोजेक्ट/CE प्रकार (Unique PW/Ap/CE)", value=f"{count_pw}")
-        
-        # सूचियों का लाइव विवरण दिखाना (Tabs के अंदर)
-        st.divider()
-        st.subheader("📋 उपयोग हो रहे सभी विषयों की लाइव मास्टर लिस्ट")
-        tab_br, tab_mn, tab_md, tab_vc, tab_p = st.tabs(["Branches", "Minor List", "MDC List", "Vocational List", "Project List"])
-        
-        with tab_br: 
-            if c_br: st.write(master_df[c_br].dropna().unique().tolist())
-        with tab_mn: 
-            if c_minor: st.write(master_df[c_minor].dropna().unique().tolist())
-        with tab_md: 
-            if c_mdc: st.write(master_df[c_mdc].dropna().unique().tolist())
-        with tab_vc: 
-            if c_voc: st.write(master_df[c_voc].dropna().unique().tolist())
-        with tab_p: 
-            if c_pw: st.write(master_df[c_pw].dropna().unique().tolist())
+        # प्रत्येक डिग्री के लिए अलग सेक्शन बनाना
+        for deg_info in target_degrees:
+            st.markdown(f"## 🎓 {deg_info['display']} विषय लाइव काउंटर स्थिति")
+            
+            # छात्र सूची में से इस विशिष्ट डिग्री के छात्रों को फ़िल्टर करना
+            if deg_col and deg_col in master_df.columns:
+                def match_degree(val):
+                    v = str(val).lower().replace(".", "").replace(" ", "").strip()
+                    # कीवर्ड्स मैच करना
+                    match = all(k in v for k in deg_info["keywords"])
+                    # एक्सक्लूड (जैसे b.com में computer न आए) हैंडल करना
+                    if "exclude" in deg_info:
+                        if any(ex in v for ex in deg_info["exclude"]):
+                            match = False
+                    return match
+                
+                df_deg_filtered = master_df[master_df[deg_col].apply(match_degree)].reset_index(drop=True)
+            else:
+                df_deg_filtered = pd.DataFrame()
+
+            if df_deg_filtered.empty:
+                st.caption(f"⚠️ डेटाबेस में `{deg_info['display']}` का कोई छात्र रिकॉर्ड नहीं मिला।")
+                st.divider()
+                continue
+                
+            # इस डिग्री के लिए मास्टर नियम निकालना
+            deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
+            
+            # 4 मुख्य विषयों के लिए 4 कॉलम लेआउट बनाना
+            c1, c2, c3, c4 = st.columns(4)
+            
+            categories = [
+                {"col_name": minor_col, "rule_key": "minor", "label": "📘 Minor विषय", "ui_col": c1},
+                {"col_name": mdc_col, "rule_key": "mdc", "label": "📙 MDC विषय", "ui_col": c2},
+                {"col_name": voc_col, "rule_key": "voc", "label": "🛠️ Vocational विषय", "ui_col": c3},
+                {"col_name": pw_col, "rule_key": "pw", "label": "🔬 Project / CE प्रकार", "ui_col": c4}
+            ]
+            
+            for cat in categories:
+                with cat["ui_col"]:
+                    st.markdown(f"#### {cat['label']}")
+                    
+                    if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
+                        # काउंट निकालना और वैल्यूज कलेक्ट करना
+                        counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
+                        counts.columns = ['विषय का नाम (Subject Name)', 'कुल छात्र (Count)']
+                        
+                        if not counts.empty:
+                            # वैध विषयों की सेट तैयार करना (केस-इंसेंसिटिव चेकिंग के लिए)
+                            valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
+                            
+                            # स्टाइलर फ़ंक्शन: जो मास्टर नियम में नहीं है उसे लाल करना
+                            def row_styler(row):
+                                sub_val = str(row['विषय का नाम (Subject Name)']).strip().lower()
+                                # अगर नियम सेट हैं और छात्र का विषय उसमें नहीं है, तो पूरी रो लाल करें
+                                if valid_subjects_set and (sub_val not in valid_subjects_set):
+                                    return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
+                                return [''] * len(row)
+                            
+                            # टेबल डिस्प्ले करना
+                            st.dataframe(
+                                counts.style.apply(row_styler, axis=1), 
+                                hide_index=True, 
+                                use_container_width=True
+                            )
+                        else:
+                            st.caption("कोई डेटा नहीं")
+                    else:
+                        st.caption("कॉलम नहीं मिला")
+            st.divider()
 
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
