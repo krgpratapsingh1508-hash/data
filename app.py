@@ -28,10 +28,11 @@ cursor.execute("""
     )
 """)
 
-# 3. परमानेंट नियम लॉकिंग स्टोरेज (डेटा डिलीट होने पर भी ड्रॉपडाउन डिब्बे भरे रखने के लिए)
+# 3. परमानेंट नियम लॉकिंग स्टोरेज (अपडेटेड सुरक्षित स्ट्रक्चर)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS locked_rules (
-        panel_prefix TEXT PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        panel_prefix TEXT UNIQUE,
         rules_json TEXT
     )
 """)
@@ -463,19 +464,19 @@ elif panel == "🎓 3. UG Panel":
                     "pw": r_pw
                 }
         
-        # नियमों को डेटाबेस में हमेशा के लिए लॉक करने का बटन
+        # नियमों को डेटाबेस में हमेशा के लिए लॉक करने का बटन (सुरक्षित और एरर-फ्री वर्शन)
         if st.button("🔒 UG मास्टर विषय नियमावली लॉक करें", key="lock_master_ug_btn"):
-            cursor.execute("INSERT OR REPLACE INTO locked_rules (panel_prefix, rules_json) VALUES (?, ?)", 
-                           ("ug_master", json.dumps(current_configured_rules)))
-            conn.commit()
-            st.success("🎉 सभी डिग्रियों (BA, B.Sc, B.Com आदि) के नियम डेटाबेस में सुरक्षित हो गए हैं!")
-            st.rerun()
-            
-        st.divider()
-        
-        # लाइव वैलिडेशन टेबल रन करना
-        allowed_ug = ["ba", "bsc", "bcom", "bhsc", "bba", "bca", "computer"]
-        process_panel_validation(df_ug, "ug", allowed_ug, master_rules=current_configured_rules)
+            try:
+                cursor.execute("""
+                    INSERT INTO locked_rules (panel_prefix, rules_json) 
+                    VALUES (?, ?)
+                    ON CONFLICT(panel_prefix) DO UPDATE SET rules_json = excluded.rules_json
+                """, ("ug_master", json.dumps(current_configured_rules)))
+                conn.commit()
+                st.success("🎉 सभी डिग्रियों (BA, B.Sc, B.Com आदि) के नियम डेटाबेस में सुरक्षित हो गए हैं!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"डेटाबेस अपडेट त्रुटि: {e}. कृपया एक बार 'Admin Panel' में जाकर 'ऑल डेटाबेस रीसेट' बटन दबाएं।")
 
 # =========================================================================
 # 📜 PANEL 4: PG PANEL
