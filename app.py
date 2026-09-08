@@ -265,7 +265,6 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     st.download_button(
         label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
 
-
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
 # =========================================================================
