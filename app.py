@@ -513,7 +513,7 @@ elif panel == "📜 4. PG Panel":
         process_panel_validation(df_pg, "pg", ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"])
 
 # =========================================================================
-# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (एडवांस टैब्स और फुल डेटा व्यूअर)
+# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (एडवांस शो-हाइड एवं टॉगल काउंटर लिस्ट)
 # =========================================================================
 elif panel == "📊 5. Dashboard / Counter Panel":
     st.title("📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
@@ -583,59 +583,70 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     st.warning(f"⚠️ डेटाबेस में `{deg_info['display']}` का कोई छात्र रिकॉर्ड नहीं मिला।")
                     continue
                     
-                # -------------------------------------------------------------------------
-                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters) - टॉगल बटन आधारित (One at a time)
-                # -------------------------------------------------------------------------
+                # ---------------------------------------------------------
+                # भाग 1: लाइव विषय काउंटर ग्रिड (Show/Hide & Toggle Enabled)
+                # ---------------------------------------------------------
                 st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
                 deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
                 
-                # ✨ यूजर को चुनने के लिए सुंदर बटन बार (Horizontal Radio)
-                selected_category = st.radio(
-                    "समीक्षा के लिए विषय प्रकार चुनें:",
-                    options=["Minor (माइनर)", "MDC (एम.डी.सी.)", "Vocational (व्यवसायिक)", "Project/PW (परियोजना)"],
-                    horizontal=True,
-                    key=f"cat_selector_{deg_info['display']}"
+                # 🔒 जादुई बटन: डिफ़ॉल्ट रूप से False (समरी को हमेशा छिपा कर रखेगा)
+                show_summary = st.checkbox(
+                    "👀 विषय काउंटर समरी दिखाएँ (Show Subject Summary)", 
+                    value=False, 
+                    key=f"toggle_sum_{deg_info['display']}"
                 )
                 
-                # सिलेक्टेड कैटेगरी के अनुसार सही कॉलम और मास्टर रूल की मैपिंग
-                cat_mapping = {
-                    "Minor (माइनर)": {"col_name": minor_col, "rule_key": "minor", "label": "विषय का नाम (Minor Subject)"},
-                    "MDC (एम.डी.सी.)": {"col_name": mdc_col, "rule_key": "mdc", "label": "विषय का नाम (MDC Subject)"},
-                    "Vocational (व्यवसायिक)": {"col_name": voc_col, "rule_key": "voc", "label": "विषय का नाम (Vocational Subject)"},
-                    "Project/PW (परियोजना)": {"col_name": pw_col, "rule_key": "pw", "label": "प्रोजेक्ट प्रकार (Project Type)"}
-                }
-                
-                current_cat = cat_mapping[selected_category]
-                
-                # केवल चुनी हुई कैटेगरी का डेटा रेंडर करना
-                if current_cat["col_name"] and current_cat["col_name"] in df_deg_filtered.columns:
-                    counts = df_deg_filtered[current_cat["col_name"]].dropna().value_counts().reset_index()
-                    counts.columns = ["Subject", "Count"]
-                    
-                    if not counts.empty:
-                        valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(current_cat["rule_key"], [])}
+                # अगर शो बटन ऑन है, तभी विषय की अलग-अलग लिस्ट और टेबल्स खुलेंगी
+                if show_summary:
+                    selected_category = st.radio(
+                        "समीक्षा के लिए विषय प्रकार चुनें:",
+                        options=["Minor (माइनर)", "MDC (एम.डी.सी.)", "Vocational (व्यवसायिक)", "Project/PW (परियोजना)"],
+                        horizontal=True,
+                        key=f"cat_selector_{deg_info['display']}"
+                    )
+
+                    # सिलेक्टेड कैटेगरी के अनुसार कॉलम मैपिंग
+                    cat_mapping = {
+                        "Minor (माइनर)": {"col_name": minor_col, "rule_key": "minor", "label": "विषय का नाम (Minor Subject)"},
+                        "MDC (एम.डी.सी.)": {"col_name": mdc_col, "rule_key": "mdc", "label": "विषय का नाम (MDC Subject)"},
+                        "Vocational (व्यवसायिक)": {"col_name": voc_col, "rule_key": "voc", "label": "विषय का नाम (Vocational Subject)"},
+                        "Project/PW (परियोजना)": {"col_name": pw_col, "rule_key": "pw", "label": "प्रोजेक्ट प्रकार (Project Type)"}
+                    }
+
+                    current_cat = cat_mapping[selected_category]
+
+                    if current_cat["col_name"] and current_cat["col_name"] in df_deg_filtered.columns:
+                        counts = df_deg_filtered[current_cat["col_name"]].dropna().value_counts().reset_index()
+                        counts.columns = ["Subject", "Count"]
                         
-                        def row_styler(row):
-                            sub_val = str(row["Subject"]).strip().lower()
-                            if valid_subjects_set and (sub_val not in valid_subjects_set):
-                                return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
-                            return [''] * len(row)
-                        
-                        # यहाँ सिंगल बड़ी टेबल दिखेगी जो पूरी स्क्रीन की चौड़ाई का उपयोग करेगी
-                        st.dataframe(
-                            counts.style.apply(row_styler, axis=1), 
-                            hide_index=True, 
-                            use_container_width=True,
-                            height=250,
-                            column_config={
-                                "Subject": st.column_config.TextColumn(label=current_cat["label"], width=500), 
-                                "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150)
-                            }
-                        )
+                        if not counts.empty:
+                            valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(current_cat["rule_key"], [])}
+                            
+                            def row_styler(row):
+                                sub_val = str(row["Subject"]).strip().lower()
+                                if valid_subjects_set and (sub_val not in valid_subjects_set):
+                                    return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
+                                return [''] * len(row)
+                            
+                            # विस्तृत चौड़ाई वाली साफ़ सिंगल-हेडर टेबल
+                            st.dataframe(
+                                counts.style.apply(row_styler, axis=1), 
+                                hide_index=True, 
+                                use_container_width=True,
+                                height=220,
+                                column_config={
+                                    "Subject": st.column_config.TextColumn(label=current_cat["label"], width=500), 
+                                    "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150)
+                                }
+                            )
+                        else:
+                            st.caption("इस श्रेणी में कोई डेटा उपलब्ध नहीं है।")
                     else:
-                        st.caption("इस श्रेणी में कोई डेटा उपलब्ध नहीं है।")
+                        st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
                 else:
-                    st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
+                    st.info("ℹ️ काउंटर समरी वर्तमान में छिपी (Hidden) है। देखने के लिए ऊपर दिए गए चेकबॉक्स पर टिक करें।")
+                
+                st.divider()
                 
                 # ---------------------------------------------------------
                 # भाग 2: विस्तृत छात्र डेटा तालिका (Detailed Data View)
@@ -644,15 +655,17 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 st.write(f"वर्तमान में इस डिग्री में कुल **{len(df_deg_filtered)}** छात्र रिकॉर्ड उपलब्ध हैं।")
                 
                 # लाइव सर्च बार फीचर
-                search_query = st.text_input(f"🔍 {deg_info['display']} डेटा में सर्च करें (नाम, रोल नंबर या विषय डालें):", key=f"search_{deg_info['display']}")
+                search_query = st.text_input(
+                    f"🔍 {deg_info['display']} डेटा में सर्च करें (नाम, रोल नंबर या विषय डालें):", 
+                    key=f"search_{deg_info['display']}"
+                )
                 
                 df_to_show = df_deg_filtered.copy()
                 if search_query:
-                    # किसी भी कॉलम में सर्च टर्म मैच होने पर डेटा फ़िल्टर करना
                     mask = df_to_show.astype(str).apply(lambda row: row.str.contains(search_query, case=False).any(), axis=1)
                     df_to_show = df_to_show[mask]
                 
-                # छात्रों की मास्टर रूल चेकिंग आधारित लाइव हाइलाइटिंग (त्रुटि सुधार के लिए लाल रंग)
+                # पूरी टेबल का लाइव मिसमैच स्टाइलर (गलत विषय लाल रंग में चमकेंगे)
                 def full_table_styler(dataframe):
                     s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
                     targets = {minor_col: 'minor', mdc_col: 'mdc', voc_col: 'voc', pw_col: 'pw'}
@@ -671,7 +684,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                         s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'
                     return s_df
 
-                # डेटा फ्रेम को बड़ी स्क्रीन ग्रिड लेआउट में प्रदर्शित करना
+                # ✨ यह कोड अब 'return s_df' के बिल्कुल नीचे, फ़ंक्शन के ठीक बाहर सही तरीके से सेट है
                 st.dataframe(
                     df_to_show.style.apply(full_table_styler, axis=None),
                     height=400,
