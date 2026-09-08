@@ -354,18 +354,26 @@ if panel == "📥 1. Entry / Upload Panel":
             st.error(f"त्रुटि: {e}")
 
 # =========================================================================
-# 💻 PANEL 2: WORK / APPROVE PANEL (Column Dropping, Row Purging & Smart Routing)
+# 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम मूव + लाइव स्प्लिट + नियम लॉक / रूटिंग)
 # =========================================================================
 elif panel == "💻 2. Work / Approve Panel":
     st.title("💻 Work / Approve Panel - डेटा प्रोसेसिंग एवं अप्रूवल")
     
-    # Load volatile transient datasets passed down from Panel 1
+    # नियमों को परमानेंट सुरक्षित रखने के लिए डेटाबेस टेबल बनाना (यदि पहले से न हो)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS locked_rules (
+            course_type TEXT PRIMARY KEY,
+            rules_json TEXT
+        )
+    """)
+    conn.commit()
+    
     raw_df = load_raw_data()
     
     if raw_df is None or raw_df.empty:
         st.info("📥 वर्तमान में कोई नई अपलोड की गई फ़ाइल पेंडिंग नहीं है। कृपया पहले 'Entry / Upload Panel (P1)' से फ़ाइल अपलोड करें।")
     else:
-        # --- Task 1: Drop Unwanted Tracking Columns ---
+        # --- कार्य 1: बेकार कॉलम हटाना ---
         st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Unwanted Columns)")
         active_cols = [c for c in raw_df.columns if c not in st.session_state["deleted_cols"]]
         
@@ -376,17 +384,32 @@ elif panel == "💻 2. Work / Approve Panel":
                 st.success("चयनित कॉलम स्क्रीन से हटा दिए गए!")
                 st.rerun()
         
-        # Build masked operation matrix frames
         final_raw_df = raw_df[active_cols]
+
+        # --- कार्य 2: 🔄 कॉलमों का क्रम बदलना (Left/Right Move Feature) ---
+        st.divider()
+        st.subheader("🔄 कॉलमों का क्रम बदलें (Move Columns Left/Right)")
+        st.write("नीचे दिए गए बॉक्स में क्रम बदलकर कॉलम को आगे-पीछे सेट करें। अप्रूवल के बाद इसी क्रम में लिस्ट लॉक होगी:")
         
-        # Identify degree and stream indexes dynamically to prevent crashing
-        deg_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), final_raw_df.columns[0])
-        br_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), final_raw_df.columns[1] if len(final_raw_df.columns) > 1 else final_raw_df.columns[0])
+        reordered_cols = st.multiselect(
+            "कॉलमों का नया क्रम तय करें (सभी आवश्यक कॉलम इसी क्रम में चुनें):",
+            options=active_cols,
+            default=active_cols,
+            key="col_reorder_select"
+        )
         
-        # --- Task 2: Targeted Row-Block Purging Based on Degrees/Branches ---
+        missing_cols = [c for c in active_cols if c not in reordered_cols]
+        if missing_cols:
+            reordered_cols.extend(missing_cols)
+            
+        final_raw_df = final_raw_df[reordered_cols]
+        
+        deg_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), final_raw_df.columns)
+        br_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), final_raw_df.columns if len(final_raw_df.columns) > 1 else final_raw_df.columns)
+        
+        # --- कार्य 3: विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करना ---
         st.divider()
         st.subheader("❌ विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करें")
-        st.write("यदि आप किसी खास कोर्स या स्ट्रीम का पूरा डेटा हटाना चाहते हैं, तो यहाँ से चुनें:")
         
         c_row1, c_row2 = st.columns(2)
         with c_row1:
@@ -402,41 +425,35 @@ elif panel == "💻 2. Work / Approve Panel":
                 for _, row in raw_df.iterrows():
                     match_deg = str(row[deg_col]) in selected_degs if selected_degs else False
                     match_br = str(row[br_col]) in selected_branches if selected_branches else False
-                    
-                    # If any metrics match up against targets, leave them out of the database slice
                     if not (match_deg or match_br):
                         filtered_rows.append(row.to_dict())
                 
-                # Commit clean operational array back to staging storage
                 cursor.execute("DELETE FROM raw_store")
                 if filtered_rows:
                     cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(filtered_rows),))
                 conn.commit()
-                
                 st.success("🎉 चयनित डिग्री/ब्रांच की सभी रोज़ को सफलतापूर्वक डिलीट कर दिया गया है!")
                 st.rerun()
 
-        # Display raw input preview grids
+        # फ़िल्टर्ड और रीऑर्डर किए गए डेटा का लाइव प्रीव्यू दिखाना
         st.divider()
-        st.subheader("📋 अपलोड किए गए रॉ डेटा का लाइव प्रीव्यू")
+        st.subheader("📋 अपलोड किए गए रॉ डेटा का लाइव प्रीव्यू (संशोधित क्रम)")
         st.dataframe(final_raw_df, height=350, use_container_width=True)
         
-        # Auto-detect target routing anchor points based on eligibility properties
-        el_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['elig', 'qual', 'class', 'course', 'deg'])), final_raw_df.columns[0])
+        el_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['elig', 'qual', 'class', 'course', 'deg'])), final_raw_df.columns)
         st.info(f"🔍 सिस्टम ऑटो-वर्गीकरण के लिए **'{el_col}'** कॉलम का उपयोग कर रहा है।")
         
-        # --- Task 3: Live Distributed Pre-Routing Tabs (Preview Split Groups) ---
+        # --- कार्य 4: लाइव प्री-विभाजन समीक्षा ---
         st.subheader("👀 लाइव प्री-विभाजन समीक्षा (Live Split Preview)")
         ug_preview_rows = []
         pg_preview_rows = []
         
         for _, row in final_raw_df.iterrows():
             val = str(row[el_col]).lower().replace(".", "").replace(" ", "").strip()
-            # Post-graduate conditional filtering logic bounds
             if any(k in val for k in ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "grad"]):
-                pg_preview_rows.append(row)
+                pg_preview_rows.append(row.to_dict())
             else:
-                ug_preview_rows.append(row)
+                ug_preview_rows.append(row.to_dict())
                 
         df_ug_preview = pd.DataFrame(ug_preview_rows)
         df_pg_preview = pd.DataFrame(pg_preview_rows)
@@ -444,33 +461,51 @@ elif panel == "💻 2. Work / Approve Panel":
         prev_tab1, prev_tab2 = st.tabs([f"🎓 UG में जाने वाला डेटा ({len(df_ug_preview)} रोज़)", f"📜 PG में जाने वाला डेटा ({len(df_pg_preview)} रोज़)"])
         
         with prev_tab1:
-            if not df_ug_preview.empty: 
-                st.dataframe(df_ug_preview, height=250, use_container_width=True)
-            else: 
-                st.caption("कोई डेटा UG श्रेणी में नहीं मिला।")
+            if not df_ug_preview.empty: st.dataframe(df_ug_preview, height=250, use_container_width=True)
+            else: st.caption("कोई डेटा UG श्रेणी में नहीं मिला।")
         with prev_tab2:
-            if not df_pg_preview.empty: 
-                st.dataframe(df_pg_preview, height=250, use_container_width=True)
-            else: 
-                st.caption("कोई डेटा PG श्रेणी में नहीं मिला।")
+            if not df_pg_preview.empty: st.dataframe(df_pg_preview, height=250, use_container_width=True)
+            else: st.caption("कोई डेटा PG श्रेणी में नहीं मिला।")
 
-        # --- Task 4: Final Database Locking Actions ---
+        # --- कार्य 5: 🔒 नियम लॉक करने और फाइनल एक्शन का लॉजिक ---
         st.divider()
-        st.subheader("🚀 फाइनल एक्शन")
-        if st.button("✅ डेटा अप्रूव करें और संबंधित पैनल्स में ट्रांसफर करें"):
-            # Permanently append distribution segments into clean production target logs
-            if not df_ug_preview.empty:
-                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (json.dumps(df_ug_preview.to_dict(orient='records')), "UG"))
-            if not df_pg_preview.empty:
-                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (json.dumps(df_pg_preview.to_dict(orient='records')), "PG"))
-            
-            # Wipe staging cache frames clean so the operational space refreshes empty
-            cursor.execute("DELETE FROM raw_store")
-            conn.commit()
-            
-            st.success("🎉 बधाई हो! डेटा सफलता पूर्वक क्लीन, विभाजित (UG/PG) और सुरक्षित लॉक कर दिया गया है।")
-            st.balloons()
-            st.rerun()
+        st.subheader("🚀 FINAL ACTION")
+        
+        # दो अलग बटन - एक नियमों को हमेशा के लिए लॉक करने के लिए, दूसरा केवल ट्रांसफर के लिए
+        c_lock, c_approve = st.columns(2)
+        
+        with c_lock:
+            st.write("💡 **नियम सुरक्षित करें:** नीचे दिया गया बटन दबाने से आपके द्वारा चुनी गई विषयों की गाइडलाइन हमेशा के लिए सेव हो जाएगी (डेटा डिलीट होने पर भी सुरक्षित रहेगी)।")
+            if st.button("🔒 तय किए गए नियम लॉक करें (Lock Selections)"):
+                # वर्तमान में सिलेक्टेड नियमों (Session States) का बैकअप तैयार करना
+                current_rules = {
+                    "ba_minor": st.session_state.get("ba_minor_sync_ug", []),
+                    "ba_mdc": st.session_state.get("ba_mdc_sync_ug", []),
+                    "ba_voc": st.session_state.get("ba_voc_sync_ug", []),
+                    "bsc_minor": st.session_state.get("bsc_minor_sync_ug", []),
+                    "bsc_mdc": st.session_state.get("bsc_mdc_sync_ug", []),
+                    "bsc_voc": st.session_state.get("bsc_voc_sync_ug", [])
+                }
+                # डेटाबेस में राइट (Lock) करना
+                cursor.execute("INSERT OR REPLACE INTO locked_rules (course_type, rules_json) VALUES (?, ?)", ("UG_PG_MASTER", json.dumps(current_rules)))
+                conn.commit()
+                st.success("🎉 आपके चुने हुए सभी विषय और नियम डेटाबेस में लॉक कर दिए गए हैं! अब ये लिस्ट डिलीट होने पर भी गायब नहीं होंगे।")
+        
+        with c_approve:
+            st.write("📈 **डेटा ट्रांसफर:** क्लीन और रीऑर्डर किए गए छात्रों के डेटा को आगे UG और PG पैनल में भेजने के लिए यह बटन दबाएँ।")
+            if st.button("✅ डेटा अप्रूव करें और पैनल्स में ट्रांसफर करें"):
+                if not df_ug_preview.empty:
+                    ug_json_str = json.dumps(df_ug_preview[reordered_cols].to_dict(orient='records'))
+                    cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (ug_json_str, "UG"))
+                if not df_pg_preview.empty:
+                    pg_json_str = json.dumps(df_pg_preview[reordered_cols].to_dict(orient='records'))
+                    cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (pg_json_str, "PG"))
+                
+                cursor.execute("DELETE FROM raw_store")
+                conn.commit()
+                st.success("🎉 बधाई हो! डेटा सफलतापूर्वक कस्टमाइज्ड क्रम में ट्रांसफर और लॉक कर दिया गया है।")
+                st.balloons()
+                st.rerun()
 
 # =========================================================================
 # 🎓 PANEL 3: UG PANEL (Approved UG Data Verification & Subject Rules Setup)
