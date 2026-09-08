@@ -6,7 +6,7 @@ import json
 st.set_page_config(layout="wide")
 
 # =========================================================================
-# डेटाबेस सेटअप - दो टेबल्स (1. अस्थायी रॉ डेटा के लिए, 2. अप्रूव्ड डेटा के लिए)
+# डेटाबेस延 सेटअप - दो टेबल्स (1. अस्थायी रॉ डेटा के लिए, 2. अप्रूव्ड डेटा के लिए)
 # =========================================================================
 conn = sqlite3.connect("nep_master_perma_db.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -69,7 +69,7 @@ else:
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-# डेटाबेस से डेटा लोड करने के सटीक फंक्शंस (Tuple Parsing Fix)
+# डेटाबेस से डेटा लोड करने के सटीक फंक्शंस (Tuple Indexing Fix)
 def load_raw_data():
     cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
@@ -206,6 +206,34 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
                     st.session_state[ba_voc_sync_key] = r_voc
                     st.rerun()
             elif is_bsc_course:
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
+                if r_minor != st.session_state[bsc_minor_sync_key]:
+                    st.session_state[bsc_minor_sync_key] = r_minor
+                    st.rerun()
+            else:
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, key=f"minor_sync_{prefix}_{idx}")
+                
+        with c2:
+            if is_ba_course:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
+                if r_mdc != st.session_state[ba_mdc_sync_key]:
+                    st.session_state[ba_mdc_sync_key] = r_mdc
+                    st.rerun()
+            elif is_bsc_course:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
+                if r_mdc != st.session_state[bsc_mdc_sync_key]:
+                    st.session_state[bsc_mdc_sync_key] = r_mdc
+                    st.rerun()
+            else:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_sync_{prefix}_{idx}")
+                
+        with c3:
+            if is_ba_course:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_sync_{prefix}_{idx}")
+                if r_voc != st.session_state[ba_voc_sync_key]:
+                    st.session_state[ba_voc_sync_key] = r_voc
+                    st.rerun()
+            elif is_bsc_course:
                 r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_sync_{prefix}_{idx}")
                 if r_voc != st.session_state[bsc_voc_sync_key]:
                     st.session_state[bsc_voc_sync_key] = r_voc
@@ -216,6 +244,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         with c4:
             r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_sync_{prefix}_{idx}")
             
+        # सभी सिलेक्टेड विषयों को नियमों (Rules Mapping Array) में लॉक करना
         rules[combo] = {
             "minor": {str(x).strip().lower() for x in r_minor},
             "mdc": {str(x).strip().lower() for x in r_mdc},
@@ -223,12 +252,59 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
             "pw": {str(x).strip().lower() for x in r_pw}
         }
 
+    # --- फिक्स किया हुआ लाइव वैरिफिकेशन स्टाइलर फ़ंक्शन ---
+    def cell_styler(dataframe):
+        s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
+        targets = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
+        
+        for index, row in dataframe.iterrows():
+            c_val = str(row[deg_col]) + " - " + str(row[br_col])
+            c_rule = rules.get(c_val, {"minor":set(), "mdc":set(), "voc":set(), "pw":set()})
+            
+            # ब्रांच की खाली चेकिंग
+            if br_col and br_col in dataframe.columns:
+                b_val = row[br_col]
+                if pd.isna(b_val) or str(b_val).strip() == "":
+                    s_df.at[index, br_col] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
+            
+            # Minor, MDC, Vocational, PW कॉलम्स की सटीक चेकिंग और लाइव हाइलाइटिंग
+            for col_name, rule_key in targets.items():
+                if col_name and col_name in dataframe.columns:
+                    val = row[col_name]
+                    # 🔵 नीला सेल = डेटा गायब या खाली है
+                    if pd.isna(val) or str(val).strip() == "":
+                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
+                    # 🔴 लाल सेल = गलत विषय (वैध बॉक्स में टिक न होने पर तुरंत लाल होगा)
+                    else:
+                        val_clean = str(val).strip().lower()
+                        valid_set = c_rule[rule_key]
+                        if val_clean not in valid_set:
+                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
+        return s_df
+
     st.divider()
-    st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
+    st.subheader(f"📊 स्टेप 2: लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
     st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मिसमैच)")
     
+    # 'combo' कॉलम को हटाकर फ़िल्टर्ड डेटा तैयार करना ताकि साफ़ लिस्ट दिखे
     display_df = df_filtered.drop(columns=['combo'])
+    
+    # 📊 छात्रों की पूरी सूची को लाइव कलर्स (🔴/🔵) और तय कॉलम क्रम के साथ दिखाना
     st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
+
+    # --- लाइव डाउनलोड फ़ीचर (Individual Panel CSV Export) ---
+    st.caption(f"💡 **टिप:** आप नीचे दिए गए बटन से इस {prefix.upper()} पैनल का पूरा वैरिफाइड डेटा तुरंत डाउनलोड कर सकते हैं।")
+    csv_validated = display_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
+        data=csv_validated,
+        file_name=f"Verified_{prefix.upper()}_Data.csv",
+        mime="text/csv",
+        key=f"download_validated_{prefix}"
+    )
+
+
+
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
