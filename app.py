@@ -516,16 +516,15 @@ elif panel == "📜 4. PG Panel":
 # 📊 PANEL 5: DASHBOARD / COUNTER PANEL (फुल स्क्रीन व्यूअर - भाग 1 और भाग 2 आपस में हाइड/शो)
 # =========================================================================
 elif panel == "📊 5. Dashboard / Counter Panel":
-    st.title("📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
+    # ❌ इस पुरानी लाइन को हटा दें: st.title("📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
+    
+    # ✅ इसकी जगह यह नई छोटी फ़ॉन्ट वाली लाइन लिखें:
+    st.markdown("### 📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
     st.write("नीचे दिए गए टैब पर क्लिक करें, फिर बटन चुनकर 'विषय समरी' या 'छात्रों की फुल लिस्ट' को पूरी स्क्रीन पर देखें।")
     
-    # UG और PG दोनों का डेटा लोड करना
+    # इसके बाद आपका पुराना कोड (UG और PG दोनों का डेटा लोड करना) वैसे ही चलता रहेगा...
     df_ug_all = load_permanent_data("UG")
     df_pg_all = load_permanent_data("PG")
-    
-    all_dfs = []
-    if df_ug_all is not None and not df_ug_all.empty: all_dfs.append(df_ug_all)
-    if df_pg_all is not None and not df_pg_all.empty: all_dfs.append(df_pg_all)
     
     if not all_dfs:
         st.info("ℹ️ काउंट प्रदर्शित करने के लिए डेटाबेस में कोई डेटा उपलब्ध नहीं है। कृपया पहले Panel 2 से डेटा अप्रूव करें।")
