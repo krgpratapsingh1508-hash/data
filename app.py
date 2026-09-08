@@ -97,8 +97,8 @@ def load_permanent_data(c_type):
 # 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA/B.Sc MDC + VOC + MINOR सिंक नियम
 # =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
-    deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
-    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
+    deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns)
+    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns)
     
     def check_degree(val):
         v = str(val).lower().replace(".", "").replace(" ", "").strip()
@@ -150,7 +150,6 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     if has_ba or has_bsc:
         st.info("💡 **मास्टर सिंक नियम सक्रिय:** आप किसी भी BA या B.Sc. कोर्स का Minor, MDC या Vocational बदलेंगे, वह उस डिग्री के सभी कोर्सेस पर एक साथ स्वचालित रूप से लागू हो जाएगा।")
     
-    # === यहाँ मुख्य लूप को पूरी तरह क्लीन और यूनिक कीज़ से फिक्स कर दिया गया है ===
     for idx, combo in enumerate(unique_combos):
         st.markdown(f"#### 📍 `{combo}`")
         
@@ -259,15 +258,66 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     display_df = df_filtered.drop(columns=['combo'])
     st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
 
-    # --- लाइव डाउनलोड फ़ीचर ---
-    st.caption("💡 **टिप:** आप नीचे दिए गए बटन से इस पैनल का पूरा वैरिफाइड डेटा तुरंत डाउनलोड कर सकते हैं।")
-    csv_validated = display_df.to_csv(index=False).encode('utf-8')
+    # --- 🚨 नया रंगीन एक्सेल डाउनलोड फीचर 🚨 ---
+    st.caption(f"💡 **टिप:** रंगीन (🔴/🔵) फ़ाइल डाउनलोड करने के लिए नीचे दिए गए बटन से एक्सेल फ़ाइल डाउनलोड करें।")
+    
+    import io
+    from openpyxl.styles import PatternFill, Border, Side
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        display_df.to_excel(writer, index=False, sheet_name='Verified_Data')
+        workbook = writer.book
+        worksheet = writer.sheets['Verified_Data']
+        
+        # स्क्रीन वाले सेम रंगों के फिलर (Hex Colors)
+        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid") # 🔵 गायब डेटा
+        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")   # 🔴 गलत विषय
+        thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
+                             top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
+        
+        targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
+        
+        # एक्सेल शीट में प्रत्येक सेल की लूपिंग और कलर कोडिंग
+        for idx, row in display_df.iterrows():
+            row_num = idx + 2 # हेडर छोड़ने के लिए +2
+            c_val = str(row[deg_col]) + " - " + str(row[br_col])
+            c_rule = rules.get(c_val, {"minor":set(), "mdc":set(), "voc":set(), "pw":set()})
+            
+            for col_idx, col_name in enumerate(display_df.columns, start=1):
+                cell = worksheet.cell(row=row_num, column=col_idx)
+                
+                # ब्रांच और माइनर कॉलम्स की खाली चेकिंग
+                if col_name in [br_col, minor_col_found]:
+                    val = row[col_name]
+                    if pd.isna(val) or str(val).strip() == "":
+                        cell.fill = blue_fill
+                        cell.border = thin_border
+                
+                # Minor, MDC, VOC, PW कॉलम्स के मिसमैच को लाल/नीला करना
+                if col_name in targets_xl:
+                    val = row[col_name]
+                    rule_key = targets_xl[col_name]
+                    
+                    if pd.isna(val) or str(val).strip() == "":
+                        cell.fill = blue_fill
+                        cell.border = thin_border
+                    else:
+                        val_clean = str(val).strip().lower()
+                        valid_set = c_rule[rule_key]
+                        if val_clean not in valid_set:
+                            cell.fill = red_fill
+                            cell.border = thin_border
+
+    processed_data = output.getvalue()
+
+    # रंगीन एक्सेल शीट डाउनलोड करने का फाइनल बटन
     st.download_button(
-        label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
-        data=csv_validated,
-        file_name=f"Verified_{prefix.upper()}_Data.csv",
-        mime="text/csv",
-        key=f"download_validated_{prefix}"
+        label=f"📥 रंगीन (🔴/🔵) {prefix.upper()} डेटा एक्सेल डाउनलोड करें",
+        data=processed_data,
+        file_name=f"Verified_{prefix.upper()}_Colored_Data.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"download_validated_excel_{prefix}"
     )
 
 # =========================================================================
