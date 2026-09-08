@@ -88,11 +88,11 @@ def load_permanent_data(c_type):
     return None
 
 # =========================================================================
-# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA/B.Sc MDC सिंक नियम
+# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, सख्त प्रोजेक्ट/इंटरर्नशिप एवं एमडीसी सिंक नियम
 # =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
-    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[1])
+    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
     
     def check_degree(val):
         v = str(val).lower().replace(".", "").replace(" ", "").strip()
@@ -139,20 +139,21 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         
         combo_lower = combo.lower().replace(".", "").replace(" ", "")
         
-        # डिग्री प्रकार की सटीक पहचान
+        # डिग्री प्रकार की पहचान
         is_ba_course = "ba-" in combo_lower or (combo_lower.startswith("ba") and not combo_lower.startswith("ba(ex") and "bsc" not in combo_lower and "bcom" not in combo_lower)
         is_bsc_course = "bsc" in combo_lower
         
-        # --- सख्त डिफ़ॉल्ट नियम (No Research Project) ---
+        # --- सख्त डिफ़ॉल्ट नियम (सभी के लिए केवल Project Work) ---
         default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw"]]
         if not default_pw_selection:
             default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() and 'research' not in str(x).lower()]
 
-        # --- विशेष छूट नियम: B.Sc. Bio / Biotech के लिए Internship जोड़ना ---
-        if is_bsc_course and ("biotech" in combo_lower or "bio" in combo_lower):
+        # --- विशेष नियम: केवल B.Sc. Biotechnology के लिए (Microbio या अन्य के लिए नहीं) ---
+        if is_bsc_course and "biotech" in combo_lower:
+            # केवल बायोटेक में ही इंटर्नशिप को वैध मानकर जोड़ेंगे
             internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
             default_pw_selection.extend(internship_opts)
-            default_pw_selection = list(set(default_pw_selection))
+            default_pw_selection = list(set(default_pw_selection)) # डुप्लिकेट साफ करना
             
         with c1: 
             if is_ba_course:
@@ -212,12 +213,9 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     display_df = df_filtered.drop(columns=['combo'])
     st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
 
-    # --- 📥 प्रत्येक पैनल के लिए लाइव डाउनलोड फ़ीचर (New Feature) ---
+    # --- लाइव डाउनलोड फ़ीचर ---
     st.caption("💡 **टिप:** आप नीचे दिए गए बटन से इस पैनल का पूरा वैरिफाइड डेटा तुरंत डाउनलोड कर सकते हैं।")
-    
-    # डेटा को UTF-8 CSV में कनवर्ट करना
     csv_validated = display_df.to_csv(index=False).encode('utf-8')
-    
     st.download_button(
         label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
         data=csv_validated,
