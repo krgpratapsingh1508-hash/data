@@ -429,7 +429,7 @@ elif panel == "🎓 3. UG Panel":
         voc_col = next((c for c in df_ug.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
         pw_col = next((c for c in df_ug.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
         
-        # ड्रॉपडाउन में दिखाने के लिए यूनीक लिस्ट
+        # ड्रॉपडाउन में दिखाने के लिए यूनिक लिस्ट
         opt_minor = df_ug[minor_col].dropna().unique().tolist() if minor_col else []
         opt_mdc = df_ug[mdc_col].dropna().unique().tolist() if mdc_col else []
         opt_voc = df_ug[voc_col].dropna().unique().tolist() if voc_col else []
@@ -438,14 +438,14 @@ elif panel == "🎓 3. UG Panel":
         st.markdown("### 🛠️ स्टेप 1: डिग्री-वाइज मास्टर गाइडलाइन सेट करें")
         st.caption("नीचे दी गई प्रत्येक डिग्री के बॉक्स को खोलकर उसके मान्य विषय चुनें और फिर 'लॉक करें' बटन दबाएं।")
         
-        # डेटाबेस से पहले से सेव नियमों को लोड करना
+        # --- डेटाबेस से पहले से सेव नियमों को सुरक्षित लोड करना ---
         ug_master_rules = {}
         try:
             cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
             locked_row = cursor.fetchone()
             if locked_row and locked_row[0]:
                 ug_master_rules = json.loads(locked_row[0])
-        except:
+        except Exception as e:
             pass
 
         # आपकी मांगी गई 5 विशिष्ट डिग्रियां
@@ -456,16 +456,21 @@ elif panel == "🎓 3. UG Panel":
             with st.expander(f"📘 {deg} के लिए वैध विषय नियम (Valid Subjects)"):
                 c1, c2, c3, c4 = st.columns(4)
                 
+                # पहले से सेव नियमों को ड्रॉपडाउन में डिफ़ॉल्ट दिखाना
                 saved_deg_rule = ug_master_rules.get(deg, {})
+                default_min = [x for x in saved_deg_rule.get("minor", []) if x in opt_minor]
+                default_mdc = [x for x in saved_deg_rule.get("mdc", []) if x in opt_mdc]
+                default_voc = [x for x in saved_deg_rule.get("voc", []) if x in opt_voc]
+                default_pw = [x for x in saved_deg_rule.get("pw", []) if x in opt_pw]
                 
                 with c1:
-                    r_minor = st.multiselect(f"Valid Minor", opt_minor, default=saved_deg_rule.get("minor", []), key=f"ug_min_{deg}")
+                    r_minor = st.multiselect(f"Valid Minor", opt_minor, default=default_min, key=f"ug_min_{deg}")
                 with c2:
-                    r_mdc = st.multiselect(f"Valid MDC", opt_mdc, default=saved_deg_rule.get("mdc", []), key=f"ug_mdc_{deg}")
+                    r_mdc = st.multiselect(f"Valid MDC", opt_mdc, default=default_mdc, key=f"ug_mdc_{deg}")
                 with c3:
-                    r_voc = st.multiselect(f"Valid Vocational", opt_voc, default=saved_deg_rule.get("voc", []), key=f"ug_voc_{deg}")
+                    r_voc = st.multiselect(f"Valid Vocational", opt_voc, default=default_voc, key=f"ug_voc_{deg}")
                 with c4:
-                    r_pw = st.multiselect(f"Valid PW/Ap/CE", opt_pw, default=saved_deg_rule.get("pw", []), key=f"ug_pw_{deg}")
+                    r_pw = st.multiselect(f"Valid PW/Ap/CE", opt_pw, default=default_pw, key=f"ug_pw_{deg}")
                     
                 current_configured_rules[deg] = {
                     "minor": r_minor,
@@ -474,7 +479,7 @@ elif panel == "🎓 3. UG Panel":
                     "pw": r_pw
                 }
         
-        # नियमों को डेटाबेस में हमेशा के लिए लॉक करने का बटन (सुरक्षित और एरर-फ्री वर्शन)
+        # नियमों को डेटाबेस में लॉक करने का बटन
         if st.button("🔒 UG मास्टर विषय नियमावली लॉक करें", key="lock_master_ug_btn"):
             try:
                 cursor.execute("""
@@ -483,10 +488,18 @@ elif panel == "🎓 3. UG Panel":
                     ON CONFLICT(panel_prefix) DO UPDATE SET rules_json = excluded.rules_json
                 """, ("ug_master", json.dumps(current_configured_rules)))
                 conn.commit()
-                st.success("🎉 सभी डिग्रियों (BA, B.Sc, B.Com आदि) के नियम डेटाबेस में सुरक्षित हो गए हैं!")
+                st.success("🎉 सभी डिग्रियों के नियम डेटाबेस में सुरक्षित हो गए हैं और नीचे की लिस्ट रंगीन हो गई है!")
                 st.rerun()
             except Exception as e:
-                st.error(f"डेटाबेस अपडेट त्रुटि: {e}. कृपया एक बार 'Admin Panel' में जाकर 'ऑल डेटाबेस रीसेट' बटन दबाएं।")
+                st.error(f"त्रुटि: {e}")
+            
+        st.divider()
+        
+        # लाइव वैलिडेशन टेबल रन करना (डेटाबेस से लोड किए गए नियमों को प्राथमिकता दें)
+        rules_to_apply = ug_master_rules if ug_master_rules else current_configured_rules
+        allowed_ug = ["ba", "bsc", "bcom", "bhsc", "bba", "bca", "computer"]
+        
+        process_panel_validation(df_ug, "ug", allowed_ug, master_rules=rules_to_apply)
 
 # =========================================================================
 # 📜 PANEL 4: PG PANEL
