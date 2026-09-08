@@ -189,7 +189,7 @@ if panel == "📥 1. Entry / Upload Panel":
             st.error(f"त्रुटि: {e}")
 
 # =========================================================================
-# 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम हटाना + UG/PG विभाजन और अप्रूवल)
+# 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम हटाना + रो हटाना + UG/PG विभाजन)
 # =========================================================================
 elif panel == "💻 2. Work / Approve Panel":
     st.title("💻 Work / Approve Panel - डेटा प्रोसेसिंग एवं अप्रूवल")
@@ -199,6 +199,7 @@ elif panel == "💻 2. Work / Approve Panel":
     if raw_df is None:
         st.info("📥 वर्तमान में कोई नई अपलोड की गई फ़ाइल पेंडिंग नहीं है। कृपया पहले 'Entry / Upload Panel' से फ़ाइल अपलोड करें।")
     else:
+        # --- कार्य 1: बेकार कॉलम हटाना ---
         st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Unwanted Columns)")
         active_cols = [c for c in raw_df.columns if c not in st.session_state["deleted_cols"]]
         
@@ -209,18 +210,59 @@ elif panel == "💻 2. Work / Approve Panel":
                 st.success("चयनित कॉलम स्क्रीन से हटा दिए गए!")
                 st.rerun()
         
-        # फ़िल्टर्ड डेटा दिखाना
+        # वर्तमान एक्टिव कॉलम्स का डेटा तैयार करना
         final_raw_df = raw_df[active_cols]
+        
+        # स्वचालित रूप से डिग्री और ब्रांच वाले कॉलम खोजना
+        deg_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), final_raw_df.columns[0])
+        br_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), final_raw_df.columns[1])
+        
+        # --- कार्य 2: चुनिंदा डिग्री और ब्रांच की पूरी रो डिलीट करना ---
+        st.divider()
+        st.subheader("❌ विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करें")
+        st.write("यदि आप किसी खास कोर्स या स्ट्रीम का डेटा हटाना चाहते हैं, तो यहाँ से चुनें:")
+        
+        c_row1, c_row2 = st.columns(2)
+        with c_row1:
+            unique_degrees = final_raw_df[deg_col].dropna().unique().tolist()
+            selected_degs = st.multiselect("डिलीट करने के लिए डिग्री (Course) चुनें:", options=unique_degrees)
+        with c_row2:
+            unique_branches = final_raw_df[br_col].dropna().unique().tolist()
+            selected_branches = st.multiselect("डिलीट करने के लिए ब्रांच (Stream) चुनें:", options=unique_branches)
+            
+        if selected_degs or selected_branches:
+            if st.button("🗑️ चुनी हुई रोज़ हमेशा के लिए डिलीट करें"):
+                # फ़िल्टर लॉजिक: जो डिग्री या ब्रांच चुनी गई है उसे डेटा से बाहर करना
+                filtered_rows = []
+                for _, row in raw_df.iterrows():
+                    match_deg = str(row[deg_col]) in selected_degs if selected_degs else False
+                    match_br = str(row[br_col]) in selected_branches if selected_branches else False
+                    
+                    # अगर दोनों में से कोई भी मैच हो गया तो उसे छोड़ देंगे (डिलीट कर देंगे)
+                    if not (match_deg or match_br):
+                        filtered_rows.append(row.to_dict())
+                
+                # अगर सारा ही डेटा डिलीट हो गया हो
+                if not filtered_rows:
+                    cursor.execute("DELETE FROM raw_store")
+                else:
+                    cursor.execute("DELETE FROM raw_store")
+                    cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(filtered_rows),))
+                
+                conn.commit()
+                st.success("🎉 चयनित डिग्री/ब्रांच की सभी रोज़ को सफलतापूर्वक डिलीट कर दिया गया है!")
+                st.rerun()
+
+        # फ़िल्टर्ड डेटा का प्रीव्यू दिखाना
         st.divider()
         st.subheader("📋 अपलोड किए गए रॉ डेटा का लाइव प्रीव्यू")
         st.dataframe(final_raw_df, height=350, use_container_width=True)
         
-                # ऑटोमैटिक UG/PG विभाजन के लिए कॉलम खोजना (Eligibility / Qualification / Course)
+        # ऑटोमैटिक UG/PG विभाजन के लिए कॉलम खोजना
         el_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['elig', 'qual', 'class', 'course', 'deg'])), final_raw_df.columns[0])
         st.info(f"🔍 सिस्टम ऑटो-वर्गीकरण के लिए **'{el_col}'** कॉलम का उपयोग कर रहा है।")
         
         # --- लाइव प्री-विभाजन व्यू (बटन दबाने से पहले देखें) ---
-        st.divider()
         st.subheader("👀 लाइव प्री-विभाजन समीक्षा (Live Split Preview)")
         
         ug_preview_rows = []
@@ -228,7 +270,6 @@ elif panel == "💻 2. Work / Approve Panel":
         
         for _, row in final_raw_df.iterrows():
             val = str(row[el_col]).lower().replace(".", "").replace(" ", "").strip()
-            # योग्यता जाँच लॉजिक
             if any(k in val for k in ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "grad"]):
                 pg_preview_rows.append(row)
             else:
@@ -237,7 +278,6 @@ elif panel == "💻 2. Work / Approve Panel":
         df_ug_preview = pd.DataFrame(ug_preview_rows)
         df_pg_preview = pd.DataFrame(pg_preview_rows)
         
-        # दो छोटे टैब्स में लाइव रिव्यू दिखाना
         prev_tab1, prev_tab2 = st.tabs([f"🎓 UG में जाने वाला डेटा ({len(df_ug_preview)} रोज़)", f"📜 PG में जाने वाला डेटा ({len(df_pg_preview)} रोज़)"])
         
         with prev_tab1:
@@ -257,7 +297,6 @@ elif panel == "💻 2. Work / Approve Panel":
         st.subheader("🚀 फाइनल एक्शन")
         
         if st.button("✅ डेटा अप्रूव करें और संबंधित पैनल्स में ट्रांसफर करें"):
-            # परमानेंट डेटाबेस में रिकॉर्ड्स को सेव करना
             if not df_ug_preview.empty:
                 cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", 
                                (json.dumps(df_ug_preview.to_dict(orient='records')), "UG"))
@@ -265,7 +304,6 @@ elif panel == "💻 2. Work / Approve Panel":
                 cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", 
                                (json.dumps(df_pg_preview.to_dict(orient='records')), "PG"))
             
-            # कार्य पूरा होने पर Raw Store से फ़ाइल डिलीट करना ताकि एंट्री पैनल रीसेट हो जाए
             cursor.execute("DELETE FROM raw_store")
             conn.commit()
             
