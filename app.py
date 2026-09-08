@@ -28,7 +28,16 @@ cursor.execute("""
     )
 """)
 
-# 3. परमानेंट नियम लॉकिंग स्टोरेज (अपडेटेड सुरक्षित स्ट्रक्चर)
+# 3. परमानेंट नियम लॉकिंग स्टोरेज (पुरानी खराब टेबल को डिलीट करके नया बनाने का ऑटो-सिस्टम)
+try:
+    # चेक करना कि क्या टेबल सही है
+    cursor.execute("SELECT panel_prefix FROM locked_rules LIMIT 1")
+except sqlite3.OperationalError:
+    # अगर कोई भी गड़बड़ (जैसे कॉलम गायब होना) मिले, तो पुरानी टेबल हटा दें
+    cursor.execute("DROP TABLE IF EXISTS locked_rules")
+    conn.commit()
+
+# अब बिल्कुल सही और नए स्ट्रक्चर के साथ टेबल बनाएं
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS locked_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,6 +45,7 @@ cursor.execute("""
         rules_json TEXT
     )
 """)
+conn.commit()
 
 # सुनिश्चित करें कि टेबल बनने के बाद डेटाबेस में बदलाव सुरक्षित (Commit) हो जाएं
 conn.commit()
