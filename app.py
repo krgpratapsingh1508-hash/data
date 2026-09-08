@@ -83,7 +83,7 @@ def load_permanent_data(c_type):
     if rows:
         dfs = []
         for r in rows:
-            if r and r[0]: # यहाँ r[0] लिखना ज़रूरी है ताकि टुपल से टेक्स्ट बाहर आ सके
+            if r and r[0]: # यहाँ r[0] लिखना ज़रूरी है ताकि टुपल से JSON टेक्स्ट बाहर आ सके
                 try:
                     data_parsed = json.loads(r[0]) # r की जगह r[0] किया गया है
                     dfs.append(pd.DataFrame(data_parsed))
