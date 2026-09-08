@@ -546,20 +546,22 @@ elif panel == "📊 5. Dashboard / Counter Panel":
             locked_row = cursor.fetchone()
             if locked_row and locked_row[0]:
                 ug_master_rules = json.loads(locked_row[0])
-        except:
+        except Exception as e:
             pass
 
-        # आपकी मांगी गई विशिष्ट डिग्रियां (सटीक मैपिंग के लिए)
+        # आपकी मांगी गई सभी विशिष्ट डिग्रियां (सटीक स्प्लिट और फिल्टरिंग के लिए)
         target_degrees = [
             {"display": "BA", "keywords": ["ba"]},
             {"display": "B.Com.", "keywords": ["bcom"], "exclude": ["computer"]},
+            {"display": "B.Com. Computer", "keywords": ["bcom", "computer"]},
             {"display": "B.Sc.", "keywords": ["bsc"], "exclude": ["biotech"]},
+            {"display": "B.Sc. Biotechnology", "keywords": ["bsc", "biotech"]},
             {"display": "B.H.Sc.", "keywords": ["bhsc"]}
         ]
 
         st.divider()
         
-        # प्रत्येक डिग्री के लिए अलग सेक्शन बनाना
+        # प्रत्येक डिग्री के लिए लूप चलाकर अलग-अलग टेबल्स बनाना
         for deg_info in target_degrees:
             st.markdown(f"## 🎓 {deg_info['display']} विषय लाइव काउंटर स्थिति")
             
@@ -584,52 +586,72 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 st.divider()
                 continue
                 
-            # इस डिग्री के लिए मास्टर नियम निकालना
+            # इस विशिष्ट डिग्री के लिए मास्टर नियम निकालना
             deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
             
-                        for cat in categories:
-                            with cat["ui_col"]:
-                                # 1. मुख्य विषय का टाइटल (जैसे: Minor विषय)
-                                st.markdown(f"#### {cat['label']}")
-                                
-                                if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
-                                    # काउंट निकालना
-                                    counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
-                                    
-                                    # 2. यहाँ हम हेडर का नाम बिल्कुल साफ और छोटा रखेंगे ताकि ग्रिड न टूटे
-                                    counts.columns = ["Subject", "Count"]
-                                    
-                                    if not counts.empty:
-                                        # वैध विषयों की सूची (मास्टर नियम से)
-                                        valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
-                                        
-                                        def row_styler(row):
-                                            sub_val = str(row["Subject"]).strip().lower()
-                                            if valid_subjects_set and (sub_val not in valid_subjects_set):
-                                                return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
-                                            return [''] * len(row)
-                                        
-                                        # 3. ✨ जादुई कस्टम हेडर जो हमेशा English ऊपर और Hindi नीचे दिखाएगा
-                                        if cat["rule_key"] == "pw":
-                                            st.markdown("**Project Type**<br><span style='color:gray; font-size:13px;'>(प्रोजेक्ट प्रकार)</span>", unsafe_allow_html=True)
-                                        else:
-                                            st.markdown("**Subject Name**<br><span style='color:gray; font-size:13px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
-                                        
-                                        # 4. डेटा टेबल दिखाना (जिसका अपना हेडर हमने छिपा दिया है)
-                                        st.dataframe(
-                                            counts.style.apply(row_styler, axis=1), 
-                                            hide_index=True, 
-                                            use_container_width=True,
-                                            # यह लाइन टेबल के अंदर के डिफ़ॉल्ट हेडर को गायब कर देगी
-                                            column_config={
-                                                "Subject": st.column_config.TextColumn(label=" ", width="medium"),
-                                                "Count": st.column_config.NumberColumn(label=" ", width="small")
-                                            }
-                                        )
-                                    else:
-                                        st.caption("कोई डेटा नहीं")
-                                else:
-                                    st.caption("कॉलम नहीं मिला")
+            # 4 मुख्य विषयों के लिए 4 सुंदर कॉलम का लेआउट
+            c1, c2, c3, c4 = st.columns(4)
+            
+            categories = [
+                {"col_name": minor_col, "rule_key": "minor", "label": "📘 Minor विषय", "ui_col": c1},
+                {"col_name": mdc_col, "rule_key": "mdc", "label": "📙 MDC विषय", "ui_col": c2},
+                {"col_name": voc_col, "rule_key": "voc", "label": "🛠️ Vocational विषय", "ui_col": c3},
+                {"col_name": pw_col, "rule_key": "pw", "label": "🔬 Project / CE प्रकार", "ui_col": c4}
+            ]
+            
+            for cat in categories:
+                with cat["ui_col"]:
+                    # विषय श्रेणी का शीर्षक
+                    st.markdown(f"### {cat['label']}")
+                    
+                    if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
+                        # प्रत्येक विषय की कुल छात्र संख्या (Count) निकालना
+                        counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
+                        counts.columns = ["Subject", "Count"]
+                        
+                        if not counts.empty:
+                            # वैध विषयों का सेट तैयार करना
+                            valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
+                            
+                            # स्टाइलर फ़ंक्शन: जो मास्टर नियम में नहीं है उसे लाल (🔴) करना
+                            def row_styler(row):
+                                sub_val = str(row["Subject"]).strip().lower()
+                                if valid_subjects_set and (sub_val not in valid_subjects_set):
+                                    return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
+                                return [''] * len(row)
+                            
+                            # ✨ जादुई कस्टम हेडर जो हमेशा बिना कटे English ऊपर और Hindi नीचे परफेक्ट दिखाएगा
+                            if cat["rule_key"] == "pw":
+                                header_html = """
+                                <div style='display: flex; justify-content: space-between; border-bottom: 2px solid #ddd; padding-bottom: 4px; margin-bottom: 6px;'>
+                                    <div style='width: 75%; font-weight: bold;'>Project Type<br><span style='color: gray; font-size: 12px; font-weight: normal;'>(प्रोजेक्ट प्रकार)</span></div>
+                                    <div style='width: 25%; font-weight: bold; text-align: right;'>Total Students<br><span style='color: gray; font-size: 12px; font-weight: normal;'>(कुल छात्र)</span></div>
+                                </div>
+                                """
+                            else:
+                                header_html = """
+                                <div style='display: flex; justify-content: space-between; border-bottom: 2px solid #ddd; padding-bottom: 4px; margin-bottom: 6px;'>
+                                    <div style='width: 75%; font-weight: bold;'>Subject Name<br><span style='color: gray; font-size: 12px; font-weight: normal;'>(विषय का नाम)</span></div>
+                                    <div style='width: 25%; font-weight: bold; text-align: right;'>Total Students<br><span style='color: gray; font-size: 12px; font-weight: normal;'>(कुल छात्र)</span></div>
+                                </div>
+                                """
+                            st.markdown(header_html, unsafe_allow_html=True)
+                            
+                            # स्ट्रीमलिट टेबल रेंडर करना (डिफ़ॉल्ट खराब हेडर को छिपाकर)
+                            st.dataframe(
+                                counts.style.apply(row_styler, axis=1), 
+                                hide_index=True, 
+                                use_container_width=True,
+                                column_config={
+                                    "Subject": st.column_config.TextColumn(label=" ", width="medium"),
+                                    "Count": st.column_config.NumberColumn(label=" ", width="small")
+                                }
+                            )
+                        else:
+                            st.caption("कोई छात्र डेटा उपलब्ध नहीं है।")
+                    else:
+                        st.caption("एक्सेल में यह कॉलम नहीं मिला।")
+            st.divider()
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
