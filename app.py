@@ -649,54 +649,99 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                         st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
 
                 # -------------------------------------------------------------------------
-                # 📋 केवल भाग 2 (छात्रों की विस्तृत लिस्ट) लोड होगा, भाग 1 पूरी तरह हाइड रहेगा
+                # 📋 केवल भाग 2 (छात्रों की विस्तृत लिस्ट) - लाइव कलर कोडिंग और ब्लैंक काउंटर फिक्स
                 # -------------------------------------------------------------------------
                 elif view_option == "📋 भाग 2: छात्रों की विस्तृत लिस्ट (Detailed Student List)":
                     st.markdown(f"### 📋 {deg_info['display']} के सभी छात्रों का विस्तृत डेटा")
-                    st.write(f"वर्तमान में इस डिग्री में कुल **{len(df_deg_filtered)}** छात्र रिकॉर्ड उपलब्ध हैं।")
                     
-                    # 🔍 लाइव सर्च बार फीचर (नाम, रोल नंबर, मोबाइल या विषय से फिल्टर करने के लिए)
+                    df_to_show = df_deg_filtered.copy()
+                    
+                    # 🔍 लाइव सर्च बार फीचर
                     search_query = st.text_input(
                         f"🔍 {deg_info['display']} डेटा में सर्च करें (नाम, रोल नंबर या विषय डालें):", 
                         key=f"search_{deg_info['display']}"
                     )
                     
-                    df_to_show = df_deg_filtered.copy()
                     if search_query:
-                        # किसी भी रो (Row) के किसी भी सेल में टर्म मैच होने पर डेटा फ़िल्टर करना
                         mask = df_to_show.astype(str).apply(lambda row: row.str.contains(search_query, case=False).any(), axis=1)
                         df_to_show = df_to_show[mask]
+                
+                    # --- 🛠️ सटीक लाइव कॉलम डिटेक्शन (त्रुटि सुधार इंजन के लिए) ---
+                    actual_minor = next((c for c in df_to_show.columns if 'minor' in c.lower()), None)
+                    actual_mdc = next((c for c in df_to_show.columns if 'mdc' in c.lower()), None)
+                    actual_voc = next((c for c in df_to_show.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
+                    actual_pw = next((c for c in df_to_show.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+                
+                    # --- 📊 लाइव काउंटर मीटर (खाली और गलत सेल की गिनती के लिए गणना) ---
+                    blank_count = 0
+                    wrong_count = 0
                     
-                    # 🎨 पूरी टेबल का लाइव मिसमैच स्टाइलर फ़ंक्शन
+                    targets_for_counting = {
+                        actual_minor: 'minor', 
+                        actual_mdc: 'mdc', 
+                        actual_voc: 'voc', 
+                        actual_pw: 'pw'
+                    }
+                    
+                    for index, row in df_to_show.iterrows():
+                        for col_name, rule_key in targets_for_counting.items():
+                            if col_name and col_name in df_to_show.columns:
+                                val = row[col_name]
+                                if pd.isna(val) or str(val).strip() == "":
+                                    blank_count += 1
+                                else:
+                                    val_clean = str(val).strip().lower()
+                                    valid_list = deg_rule.get(rule_key, [])
+                                    valid_set = {str(x).strip().lower() for x in valid_list}
+                                    if valid_set and (val_clean not in valid_set):
+                                        wrong_count += 1
+                
+                    # स्क्रीन पर लाइव स्टेट्स कार्ड्स दिखाना
+                    metric_c1, metric_c2, metric_c3 = st.columns(3)
+                    with metric_c1:
+                        st.metric(label="👥 कुल छात्र रिकॉर्ड (Total Rows)", value=len(df_to_show))
+                    with metric_c2:
+                        st.metric(label="🔵 कुल खाली सेल (Missing Data)", value=blank_count)
+                    with metric_c3:
+                        st.metric(label="🔴 कुल गलत विषय (Rule Mismatch)", value=wrong_count)
+                
+                    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर नियमावली से मिसमैच)")
+                
+                    # --- 🎨 फिक्स किया गया लाइव कलर कोडिंग स्टाइलर इंजन ---
                     def full_table_styler(dataframe):
-                        # खाली बैकग्राउंड के साथ एक ही आकार का समानांतर डेटाफ्रेम बनाना
                         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
                         
-                        # जिन कॉलम्स को मास्टर गाइडलाइन से चेक करना है उनकी सूची
-                        targets = {minor_col: 'minor', mdc_col: 'mdc', voc_col: 'voc', pw_col: 'pw'}
+                        # वर्तमान डेटाफ़्रेम के वास्तविक कॉलमों के आधार पर मैपिंग
+                        targets = {
+                            actual_minor: 'minor', 
+                            actual_mdc: 'mdc', 
+                            actual_voc: 'voc', 
+                            actual_pw: 'pw'
+                        }
                         
                         for index, row in dataframe.iterrows():
                             for col_name, rule_key in targets.items():
                                 if col_name and col_name in dataframe.columns:
                                     val = row[col_name]
                                     
-                                    # 🔵 स्थिति 1: यदि सेल पूरी तरह खाली है तो नीला करें
+                                    # 🔵 कंडीशन 1: अगर सेल खाली है तो तुरंत गहरा नीला करें
                                     if pd.isna(val) or str(val).strip() == "":
-                                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
+                                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
+                                    
+                                    # 🔴 कंडीशन 2: अगर विषय भरा है पर मास्टर नियमों में नहीं है तो गाढ़ा लाल करें
                                     else:
                                         val_clean = str(val).strip().lower()
                                         valid_list = deg_rule.get(rule_key, [])
                                         valid_set = {str(x).strip().lower() for x in valid_list}
                                         
-                                        # 🔴 स्थिति 2: यदि विषय मास्टर नियमावली में लॉक किए गए विषयों से मिसमैच है तो लाल करें
                                         if valid_set and (val_clean not in valid_set):
-                                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
+                                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'
                         return s_df
                 
-                    # 🖥️ फुल स्क्रीन चौड़ाई (Full Width) के साथ छात्रों की बड़ी मुख्य तालिका रेंडर करना
+                    # full screen view table render
                     st.dataframe(
                         df_to_show.style.apply(full_table_styler, axis=None),
-                        height=550, # टेबल की ऊंचाई थोड़ी बढ़ा दी गई है ताकि अधिक रोज़ एक साथ दिखें
+                        height=550,
                         use_container_width=True
                     )
                                     
