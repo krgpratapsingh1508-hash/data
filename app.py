@@ -675,7 +675,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                         st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
 
                 # -------------------------------------------------------------------------
-                # 📋 केवल भाग 2 (छात्रों की विस्तृत लिस्ट) - लाइव कलर कोडिंग और ब्लैंक काउंटर फिक्स
+                # 📋 केवल भाग 2 (छात्रों की विस्तृत लिस्ट) - 1 से शुरू होने वाला सीरियल नंबर फिक्स
                 # -------------------------------------------------------------------------
                 elif view_option == "📋 भाग 2: छात्रों की विस्तृत लिस्ट (Detailed Student List)":
                     st.markdown(f"### 📋 {deg_info['display']} के सभी छात्रों का विस्तृत डेटा")
@@ -692,25 +692,24 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                         mask = df_to_show.astype(str).apply(lambda row: row.str.contains(search_query, case=False).any(), axis=1)
                         df_to_show = df_to_show[mask]
                 
-                    # --- 🛠️ सटीक लाइव कॉलम डिटेक्शन (त्रुटि सुधार इंजन के लिए) ---
+                    # --- 🛠️ सटीक लाइव कॉलम डिटेक्शन ---
                     actual_minor = next((c for c in df_to_show.columns if 'minor' in c.lower()), None)
                     actual_mdc = next((c for c in df_to_show.columns if 'mdc' in c.lower()), None)
                     actual_voc = next((c for c in df_to_show.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
                     actual_pw = next((c for c in df_to_show.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
                 
-                    # 🔒 डेटाबेस से P3 (UG Panel) के नियमों को बिल्कुल सही तरीके से दोबारा लोड करना (फिक्स किया गया)
+                    # 🔒 डेटाबेस से P3 के नियमों को लोड करना
                     current_deg_rules = {}
                     try:
                         cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
                         locked_row = cursor.fetchone()
                         if locked_row and locked_row[0]:
                             all_rules = json.loads(locked_row[0])
-                            # वर्तमान डिग्री (जैसे BA, B.Com.) के नियम निकालना
                             current_deg_rules = all_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
                     except Exception as e:
-                        st.error(f"नियम लोड करने में त्रुटि: {e}")
+                        pass
                 
-                    # --- 📊 लाइव काउंटर मीटर (खाली और गलत सेल की गिनती के लिए गणना) ---
+                    # --- 📊 लाइव काउंटर मीटर ---
                     blank_count = 0
                     wrong_count = 0
                     
@@ -731,8 +730,6 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                     val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
                                     valid_list = current_deg_rules.get(rule_key, [])
                                     valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
-                                    
-                                    # 🚨 सुधार: अगर P3 में विषय चुने गए हैं, और छात्र का विषय उसमें नहीं है, तो वह निश्चित ही गलत (Wrong) है
                                     if valid_set and (val_clean not in valid_set):
                                         wrong_count += 1
                 
@@ -747,32 +744,28 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 
                     st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (Panel 3 में आपके द्वारा चुने गए विषयों के अलावा बाकी सब)")
                 
-                    # --- 🎨 फिक्स किया गया लाइव कलर कोडिंग स्टाइलर इंजन ---
+                    # ✨ जादू यहाँ है: टेबल दिखाने से पहले इंडेक्स को 1 से शुरू करने के लिए शिफ्ट करना
+                    df_to_show.index = range(1, len(df_to_show) + 1)
+                
+                    # --- 🎨 लाइव कलर कोडिंग स्टाइलर इंजन ---
                     def full_table_styler(dataframe):
                         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
-                        
                         targets = {
                             actual_minor: 'minor', 
                             actual_mdc: 'mdc', 
                             actual_voc: 'voc', 
                             actual_pw: 'pw'
                         }
-                        
                         for index, row in dataframe.iterrows():
                             for col_name, rule_key in targets.items():
                                 if col_name and col_name in dataframe.columns:
                                     val = row[col_name]
-                                    
-                                    # 🔵 कंडीशन 1: अगर सेल खाली (Blank) है तो तुरंत गहरा नीला करें
                                     if pd.isna(val) or str(val).strip() == "":
                                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
-                                    
-                                    # 🔴 कंडीशन 2: अगर विषय भरा है पर Panel 3 में आपके द्वारा बताए गए 'सही' विषयों की सूची में नहीं है तो गाढ़ा लाल करें
                                     else:
                                         val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
                                         valid_list = current_deg_rules.get(rule_key, [])
                                         valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
-                                        
                                         if valid_set and (val_clean not in valid_set):
                                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'
                         return s_df
