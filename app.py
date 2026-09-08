@@ -155,10 +155,9 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         for index, row in dataframe.iterrows():
             student_deg = str(row[deg_col]).lower().replace(".", "").replace(" ", "").strip()
             
-            # सही मास्टर रूल की पहचान करना (जैसे bcom computer या bcom)
+            # सही मास्टर रूल की पहचान करना
             matched_key = "Default"
             if master_rules:
-                # सबसे पहले बड़े नाम (जैसे bcom computer) को चेक करें ताकि सटीक मैच हो
                 sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
                 for rule_key in sorted_keys:
                     rk_clean = rule_key.lower().replace(".", "").replace(" ", "").strip()
@@ -184,7 +183,6 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
                         val_clean = str(val).strip().lower()
                         valid_list = c_rule.get(rule_key, [])
                         valid_set = {str(x).strip().lower() for x in valid_list}
-                        # अगर मास्टर रूल में विषय सेट हैं और छात्र का विषय उसमें नहीं है, तो लाल करें
                         if valid_set and (val_clean not in valid_set):
                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
         return s_df
@@ -192,9 +190,12 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
     st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
     st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच)")
     
+    # ✨ जादू यहाँ है: स्क्रीन पर रेंडर करने से ठीक पहले इंडेक्स को 1 से शुरू करने के लिए शिफ्ट करना
+    df_filtered.index = range(1, len(df_filtered) + 1)
+    
     st.dataframe(df_filtered.style.apply(cell_styler, axis=None), height=500, use_container_width=True)
 
-    # --- 🚨 नया रंगीन एक्सेल डाउनलोड फीचर 🚨 ---
+    # --- 🚨 एक्सेल डाउनलोड फीचर (एक्सेल फाइल के सीरियल नंबर में कोई बदलाव नहीं होगा ताकि एक्सेल का रो स्ट्रक्चर न बिगड़े) ---
     import io
     from openpyxl.styles import PatternFill, Border, Side
     
@@ -211,9 +212,10 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         
         targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
         
-        for idx, row in df_filtered.iterrows():
+        # एक्सेल स्टाइलिंग के लिए इंडेक्सिंग लूप
+        for idx, row in enumerate(df_filtered.itertuples(index=False)):
             row_num = idx + 2 
-            student_deg = str(row[deg_col]).lower().replace(".", "").replace(" ", "").strip()
+            student_deg = str(getattr(row, deg_col, '')).lower().replace(".", "").replace(" ", "").strip()
             
             matched_key = "Default"
             if master_rules:
@@ -227,15 +229,14 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
             
             for col_idx, col_name in enumerate(df_filtered.columns, start=1):
                 cell = worksheet.cell(row=row_num, column=col_idx)
+                val = getattr(row, col_name, None)
                 
                 if col_name in [br_col, minor_col_found]:
-                    val = row[col_name]
                     if pd.isna(val) or str(val).strip() == "":
                         cell.fill = blue_fill
                         cell.border = thin_border
                 
                 if col_name in targets_xl:
-                    val = row[col_name]
                     rule_key = targets_xl[col_name]
                     
                     if pd.isna(val) or str(val).strip() == "":
