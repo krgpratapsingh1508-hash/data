@@ -117,7 +117,7 @@ else:
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-def (df_panel, prefix, allowed_degrees):
+def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=None):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
     br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
     
@@ -136,167 +136,26 @@ def (df_panel, prefix, allowed_degrees):
     voc_col_found = next((c for c in df_filtered.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
     pw_col_found = next((c for c in df_filtered.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
 
-    df_filtered['combo'] = df_filtered[deg_col].astype(str) + " - " + df_filtered[br_col].astype(str)
-    unique_combos = df_filtered['combo'].unique().tolist()
-    
-    st.subheader("📋 स्टेप 1: डिग्री + ब्रांच के अनुसार सही विषय सेट करें")
-    
-    opt_minor = df_filtered[minor_col_found].dropna().unique().tolist() if minor_col_found else []
-    opt_mdc = df_filtered[mdc_col_found].dropna().unique().tolist() if mdc_col_found else []
-    opt_voc = df_filtered[voc_col_found].dropna().unique().tolist() if voc_col_found else []
-    opt_pw = df_filtered[pw_col_found].dropna().unique().tolist() if pw_col_found else []
-    
-    # --- BA और B.Sc. के लिए Minor, MDC और Vocational मास्टर सिंक स्टेट मैनेजमेंट ---
-    ba_minor_sync_key = f"ba_minor_sync_{prefix}"
-    ba_mdc_sync_key = f"ba_mdc_sync_{prefix}"
-    ba_voc_sync_key = f"ba_voc_sync_{prefix}"
-    
-    bsc_minor_sync_key = f"bsc_minor_sync_{prefix}"
-    bsc_mdc_sync_key = f"bsc_mdc_sync_{prefix}"
-    bsc_voc_sync_key = f"bsc_voc_sync_{prefix}"
-    
-    # 🔒 सुरक्षित डेटाबेस कॉल (ताकि एरर आने पर ऐप क्रैश न हो)
-    saved_rules = {}
-    try:
-        cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = ?", (prefix,))
-        locked_row = cursor.fetchone()
-        if locked_row and locked_row[0]:
-            saved_rules = json.loads(locked_row[0])
-    except sqlite3.OperationalError:
-        pass # अगर टेबल लॉक या गायब हो तो एरर स्किप करें
-
-    if ba_minor_sync_key not in st.session_state: st.session_state[ba_minor_sync_key] = saved_rules.get("ba_minor", [])
-    if ba_mdc_sync_key not in st.session_state: st.session_state[ba_mdc_sync_key] = saved_rules.get("ba_mdc", [])
-    if ba_voc_sync_key not in st.session_state: st.session_state[ba_voc_sync_key] = saved_rules.get("ba_voc", [])
-    
-    if bsc_minor_sync_key not in st.session_state: st.session_state[bsc_minor_sync_key] = saved_rules.get("bsc_minor", [])
-    if bsc_mdc_sync_key not in st.session_state: st.session_state[bsc_mdc_sync_key] = saved_rules.get("bsc_mdc", [])
-    if bsc_voc_sync_key not in st.session_state: st.session_state[bsc_voc_sync_key] = saved_rules.get("bsc_voc", [])
-
-    rules = {}
-    
-    has_ba = any("ba-" in combo.lower().replace(".", "").replace(" ", "") or combo.lower().startswith("ba ") for combo in unique_combos)
-    has_bsc = any("bsc" in combo.lower().replace(".", "").replace(" ", "") for combo in unique_combos)
-    
-    if has_ba or has_bsc:
-        st.info("💡 **मास्टर सिंक नियम सक्रिय:** आप किसी भी BA या B.Sc. कोर्स का Minor, MDC या Vocational बदलेंगे, वह उस डिग्री के सभी कोर्सेस पर एक साथ स्वचालित रूप से लागू हो जाएगा।")
-    
-    for idx, combo in enumerate(unique_combos):
-        st.markdown(f"#### 📍 `{combo}`")
-        
-        combo_lower = combo.lower().replace(".", "").replace(" ", "")
-        is_ba_course = "ba-" in combo_lower or (combo_lower.startswith("ba") and not combo_lower.startswith("ba(ex") and "bsc" not in combo_lower and "bcom" not in combo_lower)
-        is_bsc_course = "bsc" in combo_lower
-        
-        # --- सख्त डिफ़ॉल्ट नियम (सभी सामान्य कोर्सेस के लिए केवल Project Work) ---
-        default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw", "project-work (pw)"]]
-        if not default_pw_selection:
-            default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() and 'research' not in str(x).lower()]
-
-        # --- विशेष नियम: केवल B.Sc. Biotechnology के लिए इंटर्नशिप छूट ---
-        if is_bsc_course and "biotech" in combo_lower:
-            internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
-            default_pw_selection.extend(internship_opts)
-            default_pw_selection = list(set(default_pw_selection))
-            
-        # --- 4 कॉलम्स का सटीक लेआउट (सारे डुप्लीकेट ब्लॉक्स हटा दिए गए हैं) ---
-        c1, c2, c3, c4 = st.columns(4)
-        
-        with c1:
-            if is_ba_course:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[ba_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
-                if r_minor != st.session_state[ba_minor_sync_key]:
-                    st.session_state[ba_minor_sync_key] = r_minor
-                    st.rerun()
-            elif is_bsc_course:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_sync_{prefix}_{idx}")
-                if r_minor != st.session_state[bsc_minor_sync_key]:
-                    st.session_state[bsc_minor_sync_key] = r_minor
-                    st.rerun()
-            else:
-                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, key=f"minor_sync_{prefix}_{idx}")
-                
-        with c2:
-            if is_ba_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
-                if r_mdc != st.session_state[ba_mdc_sync_key]:
-                    st.session_state[ba_mdc_sync_key] = r_mdc
-                    st.rerun()
-            elif is_bsc_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_sync_{prefix}_{idx}")
-                if r_mdc != st.session_state[bsc_mdc_sync_key]:
-                    st.session_state[bsc_mdc_sync_key] = r_mdc
-                    st.rerun()
-            else:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_sync_{prefix}_{idx}")
-                
-        with c3:
-            if is_ba_course:
-                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_sync_{prefix}_{idx}")
-                if r_voc != st.session_state[ba_voc_sync_key]:
-                    st.session_state[ba_voc_sync_key] = r_voc
-                    st.rerun()
-            elif is_bsc_course:
-                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_sync_{prefix}_{idx}")
-                if r_voc != st.session_state[bsc_voc_sync_key]:
-                    st.session_state[bsc_voc_sync_key] = r_voc
-                    st.rerun()
-            else:
-                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_sync_{prefix}_{idx}")
-                
-        with c4:
-            r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_sync_{prefix}_{idx}")
-            
-        # नियमों को सुरक्षित रूप से मैप करें
-        rules[combo] = {
-            "minor": {str(x).strip().lower() for x in r_minor},
-            "mdc": {str(x).strip().lower() for x in r_mdc},
-            "voc": {str(x).strip().lower() for x in r_voc},
-            "pw": {str(x).strip().lower() for x in r_pw}
-        }
-
-    # --- 🔒 P3/P4 के लिए नियम लॉक करने का परमानेंट बटन ---
-    st.divider()
-    st.markdown(f"### 🔒 {prefix.upper()} विषय गाइडलाइन हमेशा के लिए सुरक्षित करें")
-    if st.button(f"🔒 {prefix.upper()} पैनल के सभी विषय नियम लॉक करें", key=f"lock_btn_{prefix}"):
-        master_rules = {
-            "ba_minor": st.session_state.get(ba_minor_sync_key, []),
-            "ba_mdc": st.session_state.get(ba_mdc_sync_key, []),
-            "ba_voc": st.session_state.get(ba_voc_sync_key, []),
-            "bsc_minor": st.session_state.get(bsc_minor_sync_key, []),
-            "bsc_mdc": st.session_state.get(bsc_mdc_sync_key, []),
-            "bsc_voc": st.session_state.get(bsc_voc_sync_key, [])
-        }
-        cursor.execute("INSERT OR REPLACE INTO locked_rules (panel_prefix, rules_json) VALUES (?, ?)", (prefix, json.dumps(master_rules)))
-        conn.commit()
-        st.success(f"🎉 आपके चुने हुए ड्रॉपडाउन विषय डेटाबेस में लॉक हो गए! अब छात्र सूची डिलीट होने पर भी विषय गायब नहीं होंगे।")
-        st.balloons()
-
-    # --- डेटाबेस से पुराने लॉक किए गए नियमों को डिफ़ॉल्ट रूप से स्वतः भरने का लॉजिक ---
-    cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = ?", (prefix,))
-    locked_row = cursor.fetchone()
-    if locked_row and locked_row[0]:
-        try:
-            saved_rules = json.loads(locked_row[0])
-            # अगर सेशन स्टेट अभी खाली है, तो डेटाबेस से लॉक विषय स्वतः भर जाएँगे
-            if not st.session_state[ba_minor_sync_key] and saved_rules.get("ba_minor"): st.session_state[ba_minor_sync_key] = saved_rules["ba_minor"]
-            if not st.session_state[ba_mdc_sync_key] and saved_rules.get("ba_mdc"): st.session_state[ba_mdc_sync_key] = saved_rules["ba_mdc"]
-            if not st.session_state[ba_voc_sync_key] and saved_rules.get("ba_voc"): st.session_state[ba_voc_sync_key] = saved_rules["ba_voc"]
-            
-            if not st.session_state[bsc_minor_sync_key] and saved_rules.get("bsc_minor"): st.session_state[bsc_minor_sync_key] = saved_rules["bsc_minor"]
-            if not st.session_state[bsc_mdc_sync_key] and saved_rules.get("bsc_mdc"): st.session_state[bsc_mdc_sync_key] = saved_rules["bsc_mdc"]
-            if not st.session_state[bsc_voc_sync_key] and saved_rules.get("bsc_voc"): st.session_state[bsc_voc_sync_key] = saved_rules["bsc_voc"]
-        except:
-            pass
-
     # --- लाइव वैरिफिकेशन स्टाइलर फ़ंक्शन ---
     def cell_styler(dataframe):
         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
         targets = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
         
         for index, row in dataframe.iterrows():
-            c_val = str(row[deg_col]) + " - " + str(row[br_col])
-            c_rule = rules.get(c_val, {"minor":set(), "mdc":set(), "voc":set(), "pw":set()})
+            student_deg = str(row[deg_col]).lower().replace(".", "").replace(" ", "").strip()
+            
+            # सही मास्टर रूल की पहचान करना (जैसे bcom computer या bcom)
+            matched_key = "Default"
+            if master_rules:
+                # सबसे पहले बड़े नाम (जैसे bcom computer) को चेक करें ताकि सटीक मैच हो
+                sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
+                for rule_key in sorted_keys:
+                    rk_clean = rule_key.lower().replace(".", "").replace(" ", "").strip()
+                    if rk_clean in student_deg:
+                        matched_key = rule_key
+                        break
+            
+            c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
             
             # ब्रांच की खाली चेकिंग
             if br_col and br_col in dataframe.columns:
@@ -304,64 +163,66 @@ def (df_panel, prefix, allowed_degrees):
                 if pd.isna(b_val) or str(b_val).strip() == "":
                     s_df.at[index, br_col] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
             
-            # Minor, MDC, VOC, PW कॉलम्स की सटीक चेकिंग और लाइव हाइलाइटिंग
+            # Minor, MDC, VOC, PW कॉलम्स की लाइव चेकिंग और रेड हाइलाइटिंग
             for col_name, rule_key in targets.items():
                 if col_name and col_name in dataframe.columns:
                     val = row[col_name]
-                    # 🔵 नीला सेल = डेटा गायब है
                     if pd.isna(val) or str(val).strip() == "":
                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-                    # 🔴 लाल सेल = गलत विषय (वैध सूची में न होने पर तुरंत लाल होगा)
                     else:
                         val_clean = str(val).strip().lower()
-                        valid_set = c_rule[rule_key]
-                        if val_clean not in valid_set:
+                        valid_list = c_rule.get(rule_key, [])
+                        valid_set = {str(x).strip().lower() for x in valid_list}
+                        # अगर मास्टर रूल में विषय सेट हैं और छात्र का विषय उसमें नहीं है, तो लाल करें
+                        if valid_set and (val_clean not in valid_set):
                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
         return s_df
 
-    st.divider()
-    st.subheader(f"📊 स्टेप 2: लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
-    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मिसमैच)")
+    st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
+    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच)")
     
-    display_df = df_filtered.drop(columns=['combo'])
-    st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
+    st.dataframe(df_filtered.style.apply(cell_styler, axis=None), height=500, use_container_width=True)
 
     # --- 🚨 नया रंगीन एक्सेल डाउनलोड फीचर 🚨 ---
-    st.caption(f"💡 **टिप:** रंगीन (🔴/🔵) फ़ाइल डाउनलोड करने के लिए नीचे दिए गए बटन से एक्सेल फ़ाइल डाउनलोड करें।")
-    
     import io
     from openpyxl.styles import PatternFill, Border, Side
     
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        display_df.to_excel(writer, index=False, sheet_name='Verified_Data')
+        df_filtered.to_excel(writer, index=False, sheet_name='Verified_Data')
         workbook = writer.book
         worksheet = writer.sheets['Verified_Data']
         
-        # स्क्रीन वाले सेम रंगों के फिलर (Hex Colors)
-        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid") # 🔵 गायब डेटा
-        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")   # 🔴 गलत विषय
+        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid") 
+        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")   
         thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
                              top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
         
         targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
         
-        for idx, row in display_df.iterrows():
-            row_num = idx + 2 # हेडर छोड़ने के लिए +2
-            c_val = str(row[deg_col]) + " - " + str(row[br_col])
-            c_rule = rules.get(c_val, {"minor":set(), "mdc":set(), "voc":set(), "pw":set()})
+        for idx, row in df_filtered.iterrows():
+            row_num = idx + 2 
+            student_deg = str(row[deg_col]).lower().replace(".", "").replace(" ", "").strip()
             
-            for col_idx, col_name in enumerate(display_df.columns, start=1):
+            matched_key = "Default"
+            if master_rules:
+                sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
+                for rule_key in sorted_keys:
+                    rk_clean = rule_key.lower().replace(".", "").replace(" ", "").strip()
+                    if rk_clean in student_deg:
+                        matched_key = rule_key
+                        break
+            c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
+            
+            for col_idx, col_name in enumerate(df_filtered.columns, start=1):
                 cell = worksheet.cell(row=row_num, column=col_idx)
                 
-                # ब्रांच और माइनर कॉलम्स की खाली चेकिंग
                 if col_name in [br_col, minor_col_found]:
                     val = row[col_name]
                     if pd.isna(val) or str(val).strip() == "":
                         cell.fill = blue_fill
                         cell.border = thin_border
                 
-                # MDC, VOC, PW कॉलम्स के मिसमैच को लाल/नीला करना
                 if col_name in targets_xl:
                     val = row[col_name]
                     rule_key = targets_xl[col_name]
@@ -371,14 +232,13 @@ def (df_panel, prefix, allowed_degrees):
                         cell.border = thin_border
                     else:
                         val_clean = str(val).strip().lower()
-                        valid_set = c_rule[rule_key]
-                        if val_clean not in valid_set:
+                        valid_list = c_rule.get(rule_key, [])
+                        valid_set = {str(x).strip().lower() for x in valid_list}
+                        if valid_set and (val_clean not in valid_set):
                             cell.fill = red_fill
                             cell.border = thin_border
 
     processed_data = output.getvalue()
-
-    # रंगीन एक्सेल शीट डाउनलोड करने का फाइनल बटन
     st.download_button(
         label=f"📥 रंगीन (🔴/🔵) {prefix.upper()} डेटा एक्सेल डाउनलोड करें",
         data=processed_data,
