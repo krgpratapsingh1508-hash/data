@@ -203,33 +203,33 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
                 if r_voc != st.session_state[ba_voc_sync_key]:
                     st.session_state[ba_voc_sync_key] = r_voc
                     st.rerun()
-                elif is_bsc_course:
-                    r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
-                    if r_mdc != st.session_state[bsc_mdc_sync_key]:
-                        st.session_state[bsc_mdc_sync_key] = r_mdc
-                        st.rerun()
-                else:
-                    r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
-                    
-            c3, c4 = st.columns(2)
-            with c3: 
-                # --- Vocational (Skill) मास्टर सिंक लॉजिक (BA/B.Sc.) ---
-                if is_ba_course:
-                    r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_{prefix}_{idx}")
-                    if r_voc != st.session_state[ba_voc_sync_key]:
-                        st.session_state[ba_voc_sync_key] = r_voc
-                        st.rerun()
-                elif is_bsc_course:
-                    r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_{prefix}_{idx}")
-                    if r_voc != st.session_state[bsc_voc_sync_key]:
-                        st.session_state[bsc_voc_sync_key] = r_voc
-                        st.rerun()
-                else:
-                    r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
-                    
-            with c4: 
-                # --- Project Work डिफ़ॉल्ट सिलेक्शन लॉजिक ---
-                r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
+            elif is_bsc_course:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                if r_mdc != st.session_state[bsc_mdc_sync_key]:
+                    st.session_state[bsc_mdc_sync_key] = r_mdc
+                    st.rerun()
+            else:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
+                
+        c3, c4 = st.columns(2)
+        with c3: 
+            # --- Vocational (Skill) मास्टर सिंक लॉजिक (BA/B.Sc.) ---
+            if is_ba_course:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                if r_voc != st.session_state[ba_voc_sync_key]:
+                    st.session_state[ba_voc_sync_key] = r_voc
+                    st.rerun()
+            elif is_bsc_course:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                if r_voc != st.session_state[bsc_voc_sync_key]:
+                    st.session_state[bsc_voc_sync_key] = r_voc
+                    st.rerun()
+            else:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
+                
+        with c4: 
+            # --- Project Work डिफ़ॉल्ट सिलेक्शन लॉजिक ---
+            r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
