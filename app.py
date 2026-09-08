@@ -602,9 +602,11 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     st.markdown(f"#### {cat['label']}")
                     
                     if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
-                        # काउंट निकालना और वैल्यूज कलेक्ट करना
+                        #  नया कोड (इसे पेस्ट करें)
                         counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
-                        counts.columns = ['विषय का नाम (Subject Name)', 'कुल छात्र (Count)']
+                        
+                        # English ऊपर और Hindi नीचे (\n के साथ)
+                        counts.columns = ["Subject Name\n(विषय का नाम)", "Total Students\n(कुल छात्र)"]
                         
                         if not counts.empty:
                             # वैध विषयों की सेट तैयार करना (केस-इंसेंसिटिव चेकिंग के लिए)
@@ -618,9 +620,11 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                     return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
                                 return [''] * len(row)
                             
-                            # टेबल डिस्प्ले करना
+                            #  नया डिस्प्ले कोड (जो न्यू-लाइन को सपोर्ट करेगा)
                             st.dataframe(
-                                counts.style.apply(row_styler, axis=1), 
+                                counts.style.apply(row_styler, axis=1).set_table_styles([
+                                    {'selector': 'th', 'props': [('white-space', 'pre-wrap'), ('text-align', 'center')]}
+                                ]), 
                                 hide_index=True, 
                                 use_container_width=True
                             )
