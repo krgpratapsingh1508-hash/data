@@ -83,7 +83,7 @@ def load_permanent_data(c_type):
     if rows:
         dfs = []
         for r in rows:
-            if r and r[0]: # यहाँ r[0] लिखना ज़रूरी है ताकि टुपल से JSON टेक्स्ट बाहर आ सके
+            if r and r[0]: # r[0] लिखना ज़रूरी है ताकि टुपल से JSON बाहर आ सके
                 try:
                     data_parsed = json.loads(r[0]) # r की जगह r[0] किया गया है
                     dfs.append(pd.DataFrame(data_parsed))
@@ -220,15 +220,15 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
             for col_name, rule_key in targets.items():
                 if col_name and col_name in dataframe.columns:
                     val = row[col_name]
-                    # 🔵 नीला सेल = डेटा गायब या खाली है
+                    # 🔵 नीला सेल = डेटा गायब है
                     if pd.isna(val) or str(val).strip() == "":
                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-                    # 🔴 लाल सेल = गलत विषय (मिसमैच या बिना अनुमति वाला विषय)
+                    # 🔴 लाल सेल = गलत विषय (मिसमैच)
                     else:
                         val_clean = str(val).strip().lower()
                         valid_set = c_rule[rule_key]
                         
-                        # सुधरा हुआ नियम: अगर विषय वैध सूची में नहीं है, तो उसे तुरंत लाल (🔴) मार्क करो
+                        # सुधरा हुआ नियम: अगर विषय वैध सूची में नहीं है, तो उसे तुरंत लाल मार्क करो
                         if val_clean not in valid_set:
                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
 
@@ -379,7 +379,7 @@ elif panel == "💻 2. Work / Approve Panel":
         st.subheader("🚀 FINAL ACTION")
         if st.button("✅ डेटा अप्रूव करें और संबंधित पैनल्स में ट्रांसफर करें"):
             if not df_ug_preview.empty:
-                # यह सुनिश्चित करता है कि रीऑर्डर किया हुआ कॉलम क्रम ही JSON में सेव हो
+                # reordered_cols के सही क्रम के साथ JSON में कनवर्ट करना
                 ug_json_str = json.dumps(df_ug_preview[reordered_cols].to_dict(orient='records'))
                 cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (ug_json_str, "UG"))
             if not df_pg_preview.empty:
@@ -388,7 +388,7 @@ elif panel == "💻 2. Work / Approve Panel":
             
             cursor.execute("DELETE FROM raw_store")
             conn.commit()
-            st.success("🎉 बधाई हो! डेटा सफलतापूर्वक क्लीन, आपके तय किए गए कॉलम क्रम में विभाजित (UG/PG) और सुरक्षित लॉक कर दिया गया है।")
+            st.success("🎉 डेटा सफलतापूर्वक आपके तय किए गए कॉलम क्रम में ट्रांसफर और लॉक कर दिया गया है।")
             st.balloons()
             st.rerun()
 
