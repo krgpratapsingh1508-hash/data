@@ -388,23 +388,23 @@ elif panel == "💻 2. Work / Approve Panel":
             st.rerun()
 
 # =========================================================================
-# 🎓 PANEL 3: UG PANEL (Approved UG Data Verification & Subject Rules Setup)
+# 🎓 PANEL 3: UG PANEL (सिर्फ अप्रूव्ड UG डेटा की लाइव चेकिंग और त्रुटि सुधार)
 # =========================================================================
 elif panel == "🎓 3. UG Panel":
     st.title("🎓 Undergraduate (UG) चेकिंग एवं त्रुटि सुधार पैनल")
     st.write("यहाँ Panel 2 से अप्रूव होकर आया हुआ शुद्ध UG डेटा प्रदर्शित हो रहा है।")
     
-    # Load separate permanent storage datasets for distribution routing checks
+    # परमानेंट डेटाबेस से केवल UG का डेटा लोड करना
     df_ug = load_permanent_data("UG")
     
     if df_ug is None or df_ug.empty:
         st.info("ℹ️ UG डेटाबेस में अभी कोई डेटा लॉक नहीं है। कृपया पहले **Panel 2 (Work / Approve Panel)** में जाकर डेटा अप्रूव करें।")
     else:
-        # Array bounds for valid undergraduate degree strings
+        # आवश्यक कोर्सेस/डिग्री की सूची जिन्हें इस UG पैनल में प्रोसेस करना है
         allowed_ug_degrees = ["ba", "bsc", "bcom", "bhsc", "12th", "bba", "bca", "btech", "llb"]
         
-        # Route array matrix directly through validation core processing rules
-        # (This handles the BA/B.Sc MDC + VOC Master Sync and cell styling)
+        # कोर वैलिडेशन, मास्टर एमडीसी + वोकेशनल सिंक और लाइव हाइलाइटिंग टेबल को रन करना
+        # यह फ़ंक्शन गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
         process_panel_validation(df_ug, "ug", allowed_ug_degrees)
 
 # =========================================================================
