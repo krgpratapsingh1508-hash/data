@@ -39,6 +39,43 @@ cursor.execute("""
 # सुनिश्चित करें कि टेबल बनने के बाद डेटाबेस में बदलाव सुरक्षित (Commit) हो जाएं
 conn.commit()
 
+# =========================================================================
+# परमानेंट डेटा लोड करने का फंक्शन (perma_store से UG/PG डेटा पढ़ने के लिए)
+# =========================================================================
+def load_permanent_data(course_type):
+    cursor.execute("SELECT data_json FROM perma_store WHERE course_type = ?", (course_type,))
+    rows = cursor.fetchall()
+    if not rows:
+        return pd.DataFrame()
+    all_records = []
+    for (data_json,) in rows:
+        try:
+            records = json.loads(data_json)
+            if isinstance(records, list):
+                all_records.extend(records)
+            else:
+                all_records.append(records)
+        except (json.JSONDecodeError, TypeError):
+            continue
+    if not all_records:
+        return pd.DataFrame()
+    return pd.DataFrame(all_records)
+
+def load_raw_data():
+    cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    if not row or not row[0]:
+        return pd.DataFrame()
+    try:
+        records = json.loads(row[0])
+    except (json.JSONDecodeError, TypeError):
+        return pd.DataFrame()
+    if isinstance(records, dict):
+        records = [records]
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame(records)
+
 # Session States Management
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
