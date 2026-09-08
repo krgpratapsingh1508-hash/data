@@ -11,7 +11,7 @@ st.set_page_config(layout="wide")
 conn = sqlite3.connect("nep_master_perma_db.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# 1. अस्थायी स्टोरेज (Panel 1 से Upload होकर यहाँ आएगा)
+# 1. अस्थायी स्टेजिंग स्टोरेज (Panel 1 से Upload होकर यहाँ आएगा)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS raw_store (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,7 +33,7 @@ conn.commit()
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 
-# --- LOGIN SYSTEM WITH PASSWORD ---
+# --- LOGIN SYSTEM ---
 if not st.session_state["ok"]:
     st.title("🔒 Login System")
     user = st.selectbox("Username:", ["-- चुनें --", "Admin", "Operator", "Teacher_UG", "Teacher_PG"])
@@ -48,7 +48,7 @@ if not st.session_state["ok"]:
     st.stop()
 
 # =========================================================================
-# 5 रोल-बेस्ड पैनल्स का नेविगेशन (5 Panels Structure)
+# 5 रोल-बेस्ड पैनल्स का नेविगेशन
 # =========================================================================
 u = st.session_state["user"]
 
@@ -69,11 +69,11 @@ else:
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-# डेटाबेस से डेटा लोड करने के सहायक फंक्शंस
+# डेटाबेस से डेटा लोड करने के सटीक फंक्शंस (Tuple Parsing Fix)
 def load_raw_data():
     cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
-    if row:
+    if row and row[0]:
         return pd.DataFrame(json.loads(row[0]))
     return None
 
@@ -83,12 +83,18 @@ def load_permanent_data(c_type):
     if rows:
         dfs = []
         for r in rows:
-            dfs.append(pd.DataFrame(json.loads(r[0])))
-        return pd.concat(dfs, ignore_index=True)
+            if r and r[0]:
+                try:
+                    data_parsed = json.loads(r[0])
+                    dfs.append(pd.DataFrame(data_parsed))
+                except Exception as e:
+                    continue
+        if dfs:
+            return pd.concat(dfs, ignore_index=True)
     return None
 
 # =========================================================================
-# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, सख्त प्रोजेक्ट/इंटरर्नशिप एवं एमडीसी सिंक नियम
+# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA/B.Sc MDC + VOC + MINOR सिंक नियम
 # =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
@@ -104,26 +110,37 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         st.warning(f"⚠️ {prefix.upper()} पैनल के लिए कोई उपयुक्त डेटा (मैचिंग डिग्री) नहीं मिला।")
         return
 
-    minor_col = next((c for c in df_filtered.columns if 'minor' in c.lower()), None)
-    st.session_state["mdc_col"] = next((c for c in df_filtered.columns if 'mdc' in c.lower()), None)
-    voc_col = next((c for c in df_filtered.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
-    pw_col = next((c for c in df_filtered.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+    minor_col_found = next((c for c in df_filtered.columns if 'minor' in c.lower()), None)
+    mdc_col_found = next((c for c in df_filtered.columns if 'mdc' in c.lower()), None)
+    voc_col_found = next((c for c in df_filtered.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
+    pw_col_found = next((c for c in df_filtered.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
 
     df_filtered['combo'] = df_filtered[deg_col].astype(str) + " - " + df_filtered[br_col].astype(str)
     unique_combos = df_filtered['combo'].unique().tolist()
     
     st.subheader("📋 स्टेप 1: डिग्री + ब्रांच के अनुसार सही विषय सेट करें")
     
-    opt_mdc = df_filtered[st.session_state["mdc_col"]].dropna().unique().tolist() if (st.session_state["mdc_col"] and st.session_state["mdc_col"] in df_filtered.columns) else []
-    opt_voc = df_filtered[voc_col].dropna().unique().tolist() if (voc_col and voc_col in df_filtered.columns) else []
-    opt_pw = df_filtered[pw_col].dropna().unique().tolist() if (pw_col and pw_col in df_filtered.columns) else []
+    opt_minor = df_filtered[minor_col_found].dropna().unique().tolist() if minor_col_found else []
+    opt_mdc = df_filtered[mdc_col_found].dropna().unique().tolist() if mdc_col_found else []
+    opt_voc = df_filtered[voc_col_found].dropna().unique().tolist() if voc_col_found else []
+    opt_pw = df_filtered[pw_col_found].dropna().unique().tolist() if pw_col_found else []
     
-    # --- BA और B.Sc. MDC मास्टर सिंक स्टेट मैनेजमेंट ---
-    ba_sync_key = f"ba_mdc_master_sync_{prefix}"
-    bsc_sync_key = f"bsc_mdc_master_sync_{prefix}"
+    # --- BA और B.Sc. के लिए Minor, MDC और Vocational मास्टर सिंक स्टेट मैनेजमेंट ---
+    ba_minor_sync_key = f"ba_minor_sync_{prefix}"
+    ba_mdc_sync_key = f"ba_mdc_sync_{prefix}"
+    ba_voc_sync_key = f"ba_voc_sync_{prefix}"
     
-    if ba_sync_key not in st.session_state: st.session_state[ba_sync_key] = []
-    if bsc_sync_key not in st.session_state: st.session_state[bsc_sync_key] = []
+    bsc_minor_sync_key = f"bsc_minor_sync_{prefix}"
+    bsc_mdc_sync_key = f"bsc_mdc_sync_{prefix}"
+    bsc_voc_sync_key = f"bsc_voc_sync_{prefix}"
+    
+    if ba_minor_sync_key not in st.session_state: st.session_state[ba_minor_sync_key] = []
+    if ba_mdc_sync_key not in st.session_state: st.session_state[ba_mdc_sync_key] = []
+    if ba_voc_sync_key not in st.session_state: st.session_state[ba_voc_sync_key] = []
+    
+    if bsc_minor_sync_key not in st.session_state: st.session_state[bsc_minor_sync_key] = []
+    if bsc_mdc_sync_key not in st.session_state: st.session_state[bsc_mdc_sync_key] = []
+    if bsc_voc_sync_key not in st.session_state: st.session_state[bsc_voc_sync_key] = []
 
     rules = {}
     
@@ -131,98 +148,88 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     has_bsc = any("bsc" in combo.lower().replace(".", "").replace(" ", "") for combo in unique_combos)
     
     if has_ba or has_bsc:
-        st.info("💡 **विशेष नियम सक्रिय:** आप किसी भी BA या B.Sc. का MDC बदलेंगे, वह उस डिग्री के सभी ब्रांचों में स्वतः एक साथ लागू हो जाएगा।")
+        st.info("💡 **मास्टर सिंक नियम सक्रिय:** आप किसी भी BA या B.Sc. कोर्स का Minor, MDC या Vocational बदलेंगे, वह उस डिग्री के सभी कोर्सेस पर एक साथ स्वचालित रूप से लागू हो जाएगा।")
     
     for idx, combo in enumerate(unique_combos):
         st.markdown(f"#### 📍 `{combo}`")
-        c1, c2, c3 = st.columns(3)
         
         combo_lower = combo.lower().replace(".", "").replace(" ", "")
-        
-        # डिग्री प्रकार की पहचान
         is_ba_course = "ba-" in combo_lower or (combo_lower.startswith("ba") and not combo_lower.startswith("ba(ex") and "bsc" not in combo_lower and "bcom" not in combo_lower)
         is_bsc_course = "bsc" in combo_lower
         
-        # --- सख्त डिफ़ॉल्ट नियम (सभी के लिए केवल Project Work) ---
-        default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw"]]
+        # --- सख्त डिफ़ॉल्ट नियम (सभी सामान्य कोर्सेस के लिए केवल Project Work) ---
+        default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw", "project-work (pw)"]]
         if not default_pw_selection:
             default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() and 'research' not in str(x).lower()]
 
         # --- विशेष नियम: केवल B.Sc. Biotechnology के लिए (Microbio या अन्य के लिए नहीं) ---
         if is_bsc_course and "biotech" in combo_lower:
-            # केवल बायोटेक में ही इंटर्नशिप को वैध मानकर जोड़ेंगे
             internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
             default_pw_selection.extend(internship_opts)
-            default_pw_selection = list(set(default_pw_selection)) # डुप्लिकेट साफ करना
+            default_pw_selection = list(set(default_pw_selection))
             
-        with c1: 
+        c1, c2 = st.columns(2)
+        with c1:
             if is_ba_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_sync_key], key=f"mdc_{prefix}_{idx}")
-                if r_mdc != st.session_state[ba_sync_key]:
-                    st.session_state[ba_sync_key] = r_mdc
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[ba_minor_sync_key], key=f"minor_{prefix}_{idx}")
+                if r_minor != st.session_state[ba_minor_sync_key]:
+                    st.session_state[ba_minor_sync_key] = r_minor
                     st.rerun()
             elif is_bsc_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_sync_key], key=f"mdc_{prefix}_{idx}")
-                if r_mdc != st.session_state[bsc_sync_key]:
-                    st.session_state[bsc_sync_key] = r_mdc
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, default=st.session_state[bsc_minor_sync_key], key=f"minor_{prefix}_{idx}")
+                if r_minor != st.session_state[bsc_minor_sync_key]:
+                    st.session_state[bsc_minor_sync_key] = r_minor
+                    st.rerun()
+            else:
+                r_minor = st.multiselect(f"Valid Minor for {combo}", opt_minor, key=f"minor_{prefix}_{idx}")
+        with c2:
+            if is_ba_course:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                if r_mdc != st.session_state[ba_mdc_sync_key]:
+                    st.session_state[ba_mdc_sync_key] = r_mdc
+                    st.rerun()
+            elif is_bsc_course:
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                if r_mdc != st.session_state[bsc_mdc_sync_key]:
+                    st.session_state[bsc_mdc_sync_key] = r_mdc
                     st.rerun()
             else:
                 r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
                 
-        with c2: 
-            r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
-        with c3: 
-            r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
-            
-        rules[combo] = {
-            "mdc": {str(x).strip().lower() for x in r_mdc},
-            "voc": {str(x).strip().lower() for x in r_voc},
-            "pw": {str(x).strip().lower() for x in r_pw}
-        }
-
-    def cell_styler(dataframe):
-        s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
-        targets = {st.session_state["mdc_col"]: 'mdc', voc_col: 'voc', pw_col: 'pw'}
-        
-        for index, row in dataframe.iterrows():
-            c_val = str(row[deg_col]) + " - " + str(row[br_col])
-            c_rule = rules.get(c_val, {"mdc":set(), "voc":set(), "pw":set()})
-            
-            for b_col in [br_col, minor_col]:
-                if b_col and b_col in dataframe.columns:
-                    b_val = row[b_col]
-                    if pd.isna(b_val) or str(b_val).strip() == "":
-                        s_df.at[index, b_col] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-            
-            for col_name, rule_key in targets.items():
-                if col_name and col_name in dataframe.columns:
-                    val = row[col_name]
-                    if pd.isna(val) or str(val).strip() == "":
-                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-                    else:
-                        val_clean = str(val).strip().lower()
-                        valid_set = c_rule[rule_key]
-                        if valid_set and val_clean not in valid_set:
-                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
-        return s_df
-
-    st.divider()
-    st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
-    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मिसमैच)")
-    
-    display_df = df_filtered.drop(columns=['combo'])
-    st.dataframe(display_df.style.apply(cell_styler, axis=None), height=600, use_container_width=True)
-
-    # --- लाइव डाउनलोड फ़ीचर ---
-    st.caption("💡 **टिप:** आप नीचे दिए गए बटन से इस पैनल का पूरा वैरिफाइड डेटा तुरंत डाउनलोड कर सकते हैं।")
-    csv_validated = display_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
-        data=csv_validated,
-        file_name=f"Verified_{prefix.upper()}_Data.csv",
-        mime="text/csv",
-        key=f"download_validated_{prefix}"
-    )
+        c3, c4 = st.columns(2)
+        with c3:
+            if is_ba_course:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                if r_voc != st.session_state[ba_voc_sync_key]:
+                    st.session_state[ba_voc_sync_key] = r_voc
+                    st.rerun()
+                elif is_bsc_course:
+                    r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                    if r_mdc != st.session_state[bsc_mdc_sync_key]:
+                        st.session_state[bsc_mdc_sync_key] = r_mdc
+                        st.rerun()
+                else:
+                    r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
+                    
+            c3, c4 = st.columns(2)
+            with c3: 
+                # --- Vocational (Skill) मास्टर सिंक लॉजिक (BA/B.Sc.) ---
+                if is_ba_course:
+                    r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                    if r_voc != st.session_state[ba_voc_sync_key]:
+                        st.session_state[ba_voc_sync_key] = r_voc
+                        st.rerun()
+                elif is_bsc_course:
+                    r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                    if r_voc != st.session_state[bsc_voc_sync_key]:
+                        st.session_state[bsc_voc_sync_key] = r_voc
+                        st.rerun()
+                else:
+                    r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
+                    
+            with c4: 
+                # --- Project Work डिफ़ॉल्ट सिलेक्शन लॉजिक ---
+                r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
