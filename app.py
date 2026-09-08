@@ -583,9 +583,9 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     st.warning(f"⚠️ डेटाबेस में `{deg_info['display']}` का कोई छात्र रिकॉर्ड नहीं मिला।")
                     continue
                     
-                # ---------------------------------------------------------
-                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters)
-                # ---------------------------------------------------------
+                # -------------------------------------------------------------------------
+                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters) - फिक्स की गई कॉलम चौड़ाई के साथ
+                # -------------------------------------------------------------------------
                 st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
                 deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
                 
@@ -618,22 +618,21 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                 else:
                                     st.markdown("**Subject Name**<br><span style='color:gray; font-size:12px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
                                 
+                                # ✨ यहाँ कॉलम की विड्थ (Width) को पिक्सल्स में फिक्स किया गया है ताकि नाम और संख्या साफ दिखे
                                 st.dataframe(
                                     counts.style.apply(row_styler, axis=1), 
                                     hide_index=True, 
                                     use_container_width=True,
-                                    height=180,
+                                    height=200,
                                     column_config={
-                                        "Subject": st.column_config.TextColumn(label=" ", width="medium"),
-                                        "Count": st.column_config.NumberColumn(label=" ", width="small")
+                                        "Subject": st.column_config.TextColumn(label="विषय", width=220), # विषय के नाम के लिए पर्याप्त जगह
+                                        "Count": st.column_config.NumberColumn(label="संख्या", width=80)  # नंबर के लिए सटीक जगह
                                     }
                                 )
                             else:
                                 st.caption("कोई डेटा नहीं")
                         else:
                             st.caption("कॉलम नहीं मिला")
-                
-                st.divider()
                 
                 # ---------------------------------------------------------
                 # भाग 2: विस्तृत छात्र डेटा तालिका (Detailed Data View)
