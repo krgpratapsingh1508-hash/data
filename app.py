@@ -584,52 +584,58 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     continue
                     
                 # -------------------------------------------------------------------------
-                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters) - साफ़ सिंगल हेडर के साथ
+                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters) - टॉगल बटन आधारित (One at a time)
                 # -------------------------------------------------------------------------
                 st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
                 deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
                 
-                ui_cols = st.columns(4)
-                categories = [
-                    {"label": "Minor (माइनर)", "col_name": minor_col, "rule_key": "minor", "col_idx": 0},
-                    {"label": "MDC (एम.डी.सी.)", "col_name": mdc_col, "rule_key": "mdc", "col_idx": 1},
-                    {"label": "Vocational (व्यवसायिक)", "col_name": voc_col, "rule_key": "voc", "col_idx": 2},
-                    {"label": "Project/PW (परियोजना)", "col_name": pw_col, "rule_key": "pw", "col_idx": 3},
-                ]
+                # ✨ यूजर को चुनने के लिए सुंदर बटन बार (Horizontal Radio)
+                selected_category = st.radio(
+                    "समीक्षा के लिए विषय प्रकार चुनें:",
+                    options=["Minor (माइनर)", "MDC (एम.डी.सी.)", "Vocational (व्यवसायिक)", "Project/PW (परियोजना)"],
+                    horizontal=True,
+                    key=f"cat_selector_{deg_info['display']}"
+                )
                 
-                for cat in categories:
-                    with ui_cols[cat["col_idx"]]:
-                        st.markdown(f"##### {cat['label']}")
-                        if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
-                            counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
-                            counts.columns = ["Subject", "Count"]
-                            
-                            if not counts.empty:
-                                valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
-                                
-                                def row_styler(row):
-                                    sub_val = str(row["Subject"]).strip().lower()
-                                    if valid_subjects_set and (sub_val not in valid_subjects_set):
-                                        return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
-                                    return [''] * len(row)
-                                
-                                # 🚫 पुराना st.markdown (Subject Name/Project Type) यहाँ से पूरी तरह हटा दिया गया है।
-                                
-                                # ✨ अब केवल st.dataframe के अंदर ही साफ़ और स्पष्ट सिंगल हेडर दिखाई देगा
-                                st.dataframe(
-                                    counts.style.apply(row_styler, axis=1), 
-                                    hide_index=True, 
-                                    use_container_width=True,
-                                    height=200,
-                                    column_config={
-                                        "Subject": st.column_config.TextColumn(label="विषय का नाम (Subject)", width=220), 
-                                        "Count": st.column_config.NumberColumn(label="संख्या (Count)", width=80)
-                                    }
-                                )
-                            else:
-                                st.caption("कोई डेटा नहीं")
-                        else:
-                            st.caption("कॉलम नहीं मिला")
+                # सिलेक्टेड कैटेगरी के अनुसार सही कॉलम और मास्टर रूल की मैपिंग
+                cat_mapping = {
+                    "Minor (माइनर)": {"col_name": minor_col, "rule_key": "minor", "label": "विषय का नाम (Minor Subject)"},
+                    "MDC (एम.डी.सी.)": {"col_name": mdc_col, "rule_key": "mdc", "label": "विषय का नाम (MDC Subject)"},
+                    "Vocational (व्यवसायिक)": {"col_name": voc_col, "rule_key": "voc", "label": "विषय का नाम (Vocational Subject)"},
+                    "Project/PW (परियोजना)": {"col_name": pw_col, "rule_key": "pw", "label": "प्रोजेक्ट प्रकार (Project Type)"}
+                }
+                
+                current_cat = cat_mapping[selected_category]
+                
+                # केवल चुनी हुई कैटेगरी का डेटा रेंडर करना
+                if current_cat["col_name"] and current_cat["col_name"] in df_deg_filtered.columns:
+                    counts = df_deg_filtered[current_cat["col_name"]].dropna().value_counts().reset_index()
+                    counts.columns = ["Subject", "Count"]
+                    
+                    if not counts.empty:
+                        valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(current_cat["rule_key"], [])}
+                        
+                        def row_styler(row):
+                            sub_val = str(row["Subject"]).strip().lower()
+                            if valid_subjects_set and (sub_val not in valid_subjects_set):
+                                return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
+                            return [''] * len(row)
+                        
+                        # यहाँ सिंगल बड़ी टेबल दिखेगी जो पूरी स्क्रीन की चौड़ाई का उपयोग करेगी
+                        st.dataframe(
+                            counts.style.apply(row_styler, axis=1), 
+                            hide_index=True, 
+                            use_container_width=True,
+                            height=250,
+                            column_config={
+                                "Subject": st.column_config.TextColumn(label=current_cat["label"], width=500), 
+                                "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150)
+                            }
+                        )
+                    else:
+                        st.caption("इस श्रेणी में कोई डेटा उपलब्ध नहीं है।")
+                else:
+                    st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
                 
                 # ---------------------------------------------------------
                 # भाग 2: विस्तृत छात्र डेटा तालिका (Detailed Data View)
