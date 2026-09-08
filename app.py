@@ -147,7 +147,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
     voc_col_found = next((c for c in df_filtered.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
     pw_col_found = next((c for c in df_filtered.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
 
-    # --- लाइव वैरिफिकेशन स्टाइलर फ़ंक्शन ---
+    # --- लाइव वैरिफिकेशन स्टाइलर फ़ंक्शन (स्क्रीन के लिए) ---
     def cell_styler(dataframe):
         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
         targets = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
@@ -155,7 +155,6 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         for index, row in dataframe.iterrows():
             student_deg = str(row[deg_col]).lower().replace(".", "").replace(" ", "").strip()
             
-            # सही मास्टर रूल की पहचान करना
             matched_key = "Default"
             if master_rules:
                 sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
@@ -167,35 +166,33 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
             
             c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
             
-            # ब्रांच की खाली चेकिंग
             if br_col and br_col in dataframe.columns:
                 b_val = row[br_col]
                 if pd.isna(b_val) or str(b_val).strip() == "":
                     s_df.at[index, br_col] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
             
-            # Minor, MDC, VOC, PW कॉलम्स की लाइव चेकिंग और रेड हाइलाइटिंग
             for col_name, rule_key in targets.items():
                 if col_name and col_name in dataframe.columns:
                     val = row[col_name]
                     if pd.isna(val) or str(val).strip() == "":
                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
                     else:
-                        val_clean = str(val).strip().lower()
+                        val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
                         valid_list = c_rule.get(rule_key, [])
-                        valid_set = {str(x).strip().lower() for x in valid_list}
+                        valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
                         if valid_set and (val_clean not in valid_set):
                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
         return s_df
 
     st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
-    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच)")
+    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल cell = गलत विषय (मास्टर गाइडलाइन से मिसमैच)")
     
-    # ✨ जादू यहाँ है: स्क्रीन पर रेंडर करने से ठीक पहले इंडेक्स को 1 से शुरू करने के लिए शिफ्ट करना
+    # सीरियल नंबर को 1 से शुरू करने के लिए शिफ्ट करना
     df_filtered.index = range(1, len(df_filtered) + 1)
     
     st.dataframe(df_filtered.style.apply(cell_styler, axis=None), height=500, use_container_width=True)
 
-    # --- 🚨 एक्सेल डाउनलोड फीचर (एक्सेल फाइल के सीरियल नंबर में कोई बदलाव नहीं होगा ताकि एक्सेल का रो स्ट्रक्चर न बिगड़े) ---
+    # --- 🚨 नया फिक्स किया गया रंगीन एक्सेल डाउनलोड इंजन 🚨 ---
     import io
     from openpyxl.styles import PatternFill, Border, Side
     
@@ -205,17 +202,21 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         workbook = writer.book
         worksheet = writer.sheets['Verified_Data']
         
-        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid") 
-        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")   
+        # एक्सेल में गाढ़े और साफ़ दिखने वाले कलर्स
+        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid") # गहरा नीला
+        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")   # गहरा लाल
         thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
                              top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
         
         targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
         
-        # एक्सेल स्टाइलिंग के लिए इंडेक्सिंग लूप
+        # एक्सेल फ़ाइल की एक-एक रो को चेक करने वाला सख्त लूप
         for idx, row in enumerate(df_filtered.itertuples(index=False)):
-            row_num = idx + 2 
-            student_deg = str(getattr(row, deg_col, '')).lower().replace(".", "").replace(" ", "").strip()
+            row_num = idx + 2 # हेडर रो को छोड़कर अगली लाइन से डेटा भरना
+            
+            # छात्र की डिग्री (BA, B.Com आदि) को साफ़ करके मैच करना
+            raw_deg_val = getattr(row, deg_col, '')
+            student_deg = str(raw_deg_val).lower().replace(".", "").replace(" ", "").strip()
             
             matched_key = "Default"
             if master_rules:
@@ -227,15 +228,18 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
                         break
             c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
             
+            # प्रत्येक कॉलम को चेक करके रंग भरना
             for col_idx, col_name in enumerate(df_filtered.columns, start=1):
                 cell = worksheet.cell(row=row_num, column=col_idx)
                 val = getattr(row, col_name, None)
                 
+                # 🔵 कंडीशन 1: अगर स्ट्रीम (Branch) या माइनर कॉलम खाली है तो उसे नीला करें
                 if col_name in [br_col, minor_col_found]:
                     if pd.isna(val) or str(val).strip() == "":
                         cell.fill = blue_fill
                         cell.border = thin_border
                 
+                # 🔴 कंडीशन 2: अगर भरा गया विषय P3 नियमों की लिस्ट में नहीं है तो उसे लाल करें
                 if col_name in targets_xl:
                     rule_key = targets_xl[col_name]
                     
@@ -243,9 +247,11 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
                         cell.fill = blue_fill
                         cell.border = thin_border
                     else:
-                        val_clean = str(val).strip().lower()
+                        val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
                         valid_list = c_rule.get(rule_key, [])
-                        valid_set = {str(x).strip().lower() for x in valid_list}
+                        valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
+                        
+                        # 🚨 सख्त नियम: यदि मास्टर सूची खाली नहीं है और छात्र का विषय उसमें मौजूद नहीं है, तो वह बिल्कुल गलत (Red) है
                         if valid_set and (val_clean not in valid_set):
                             cell.fill = red_fill
                             cell.border = thin_border
