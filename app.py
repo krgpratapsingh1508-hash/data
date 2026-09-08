@@ -303,9 +303,6 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         key=f"download_validated_{prefix}"
     )
 
-
-
-
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
 # =========================================================================
