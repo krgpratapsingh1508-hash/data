@@ -117,7 +117,7 @@ else:
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-def process_panel_validation(df_panel, prefix, allowed_degrees):
+def (df_panel, prefix, allowed_degrees):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
     br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
     
@@ -545,16 +545,77 @@ elif panel == "💻 2. Work / Approve Panel":
             st.balloons()
             st.rerun()
 
-# =========================================================================
-# 🎓 PANEL 3: UG PANEL
-# =========================================================================
 elif panel == "🎓 3. UG Panel":
     st.title("🎓 Undergraduate (UG) चेकिंग एवं त्रुटि सुधार पैनल")
     df_ug = load_permanent_data("UG")
+    
     if df_ug is None or df_ug.empty: 
-        st.info("ℹ️ UG डेटाबेस खाली है।")
-    else: 
-        process_panel_validation(df_ug, "ug", ["ba", "bsc", "bcom", "bhsc", "12th", "bba", "bca", "btech", "llb"])
+        st.info("ℹ️ UG डेटाबेस खाली है। कृपया पहले Panel 2 से डेटा अप्रूव करें।")
+    else:
+        # ऑटो-कॉलम डिटेक्शन
+        minor_col = next((c for c in df_ug.columns if 'minor' in c.lower()), None)
+        mdc_col = next((c for c in df_ug.columns if 'mdc' in c.lower()), None)
+        voc_col = next((c for c in df_ug.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
+        pw_col = next((c for c in df_ug.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+        
+        # ड्रॉपडाउन में दिखाने के लिए यूनीक लिस्ट
+        opt_minor = df_ug[minor_col].dropna().unique().tolist() if minor_col else []
+        opt_mdc = df_ug[mdc_col].dropna().unique().tolist() if mdc_col else []
+        opt_voc = df_ug[voc_col].dropna().unique().tolist() if voc_col else []
+        opt_pw = df_ug[pw_col].dropna().unique().tolist() if pw_col else []
+        
+        st.markdown("### 🛠️ स्टेप 1: डिग्री-वाइज मास्टर गाइडलाइन सेट करें")
+        st.caption("नीचे दी गई प्रत्येक डिग्री के बॉक्स को खोलकर उसके मान्य विषय चुनें और फिर 'लॉक करें' बटन दबाएं।")
+        
+        # डेटाबेस से पहले से सेव नियमों को लोड करना
+        ug_master_rules = {}
+        try:
+            cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
+            locked_row = cursor.fetchone()
+            if locked_row and locked_row[0]:
+                ug_master_rules = json.loads(locked_row[0])
+        except:
+            pass
+
+        # आपकी मांगी गई 5 विशिष्ट डिग्रियां
+        target_degrees = ["BA", "B.Sc.", "B.H.Sc.", "B.Com.", "B.Com. Computer"]
+        current_configured_rules = {}
+        
+        for deg in target_degrees:
+            with st.expander(f"📘 {deg} के लिए वैध विषय नियम (Valid Subjects)"):
+                c1, c2, c3, c4 = st.columns(4)
+                
+                saved_deg_rule = ug_master_rules.get(deg, {})
+                
+                with c1:
+                    r_minor = st.multiselect(f"Valid Minor", opt_minor, default=saved_deg_rule.get("minor", []), key=f"ug_min_{deg}")
+                with c2:
+                    r_mdc = st.multiselect(f"Valid MDC", opt_mdc, default=saved_deg_rule.get("mdc", []), key=f"ug_mdc_{deg}")
+                with c3:
+                    r_voc = st.multiselect(f"Valid Vocational", opt_voc, default=saved_deg_rule.get("voc", []), key=f"ug_voc_{deg}")
+                with c4:
+                    r_pw = st.multiselect(f"Valid PW/Ap/CE", opt_pw, default=saved_deg_rule.get("pw", []), key=f"ug_pw_{deg}")
+                    
+                current_configured_rules[deg] = {
+                    "minor": r_minor,
+                    "mdc": r_mdc,
+                    "voc": r_voc,
+                    "pw": r_pw
+                }
+        
+        # नियमों को डेटाबेस में हमेशा के लिए लॉक करने का बटन
+        if st.button("🔒 UG मास्टर विषय नियमावली लॉक करें", key="lock_master_ug_btn"):
+            cursor.execute("INSERT OR REPLACE INTO locked_rules (panel_prefix, rules_json) VALUES (?, ?)", 
+                           ("ug_master", json.dumps(current_configured_rules)))
+            conn.commit()
+            st.success("🎉 सभी डिग्रियों (BA, B.Sc, B.Com आदि) के नियम डेटाबेस में सुरक्षित हो गए हैं!")
+            st.rerun()
+            
+        st.divider()
+        
+        # लाइव वैलिडेशन टेबल रन करना
+        allowed_ug = ["ba", "bsc", "bcom", "bhsc", "bba", "bca", "computer"]
+        process_panel_validation(df_ug, "ug", allowed_ug, master_rules=current_configured_rules)
 
 # =========================================================================
 # 📜 PANEL 4: PG PANEL
