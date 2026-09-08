@@ -513,11 +513,11 @@ elif panel == "📜 4. PG Panel":
         process_panel_validation(df_pg, "pg", ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"])
 
 # =========================================================================
-# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (एडवांस शो-हाइड एवं टॉगल काउंटर लिस्ट)
+# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (फुल स्क्रीन व्यूअर - भाग 1 और भाग 2 आपस में हाइड/शो)
 # =========================================================================
 elif panel == "📊 5. Dashboard / Counter Panel":
     st.title("📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
-    st.write("नीचे दिए गए टैब पर क्लिक करके संबंधित डिग्री का लाइव काउंट देखें और उसके ठीक नीचे पूरे छात्र डेटाबेस की समीक्षा करें।")
+    st.write("नीचे दिए गए टैब पर क्लिक करें, फिर बटन चुनकर 'विषय समरी' या 'छात्रों की फुल लिस्ट' को पूरी स्क्रीन पर देखें।")
     
     # UG और PG दोनों का डेटा लोड करना
     df_ug_all = load_permanent_data("UG")
@@ -544,8 +544,8 @@ elif panel == "📊 5. Dashboard / Counter Panel":
         try:
             cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
             locked_row = cursor.fetchone()
-            if locked_row and locked_row[0]:
-                ug_master_rules = json.loads(locked_row[0])
+            if locked_row and locked_row:
+                ug_master_rules = json.loads(locked_row)
         except:
             pass
 
@@ -563,7 +563,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
 
         for index, deg_info in enumerate(target_degrees):
             with tabs[index]:
-                st.markdown(f"## 🎓 {deg_info['display']} डैशबोर्ड")
+                st.markdown(f"## 🎓 {deg_info['display']} डैशबोर्ड बोर्ड")
                 
                 # छात्र सूची में से इस विशिष्ट डिग्री के छात्रों को फ़िल्टर करना
                 if deg_col and deg_col in master_df.columns:
@@ -582,22 +582,27 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 if df_deg_filtered.empty:
                     st.warning(f"⚠️ डेटाबेस में `{deg_info['display']}` का कोई छात्र रिकॉर्ड नहीं मिला।")
                     continue
-                    
-                # ---------------------------------------------------------
-                # भाग 1: लाइव विषय काउंटर ग्रिड (Show/Hide & Toggle Enabled)
-                # ---------------------------------------------------------
-                st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
-                deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
                 
-                # 🔒 जादुई बटन: डिफ़ॉल्ट रूप से False (समरी को हमेशा छिपा कर रखेगा)
-                show_summary = st.checkbox(
-                    "👀 विषय काउंटर समरी दिखाएँ (Show Subject Summary)", 
-                    value=False, 
-                    key=f"toggle_sum_{deg_info['display']}"
+                # मास्टर नियम लोड करना
+                deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
+
+                # ✨ जादुई टॉगल बटन: यह तय करेगा कि भाग 1 देखना है या भाग 2
+                view_option = st.radio(
+                    "देखने के लिए व्यू चुनें:",
+                    options=["📈 भाग 1: विषय काउंटर समरी (Subject Summary Counters)", "📋 भाग 2: छात्रों की विस्तृत लिस्ट (Detailed Student List)"],
+                    horizontal=True,
+                    key=f"view_toggle_{deg_info['display']}"
                 )
                 
-                # अगर शो बटन ऑन है, तभी विषय की अलग-अलग लिस्ट और टेबल्स खुलेंगी
-                if show_summary:
+                st.divider()
+
+                # ---------------------------------------------------------
+                # 📈 केवल भाग 1 (विषय काउंटर समरी) लोड होगा, भाग 2 पूरी तरह हाइड रहेगा
+                # ---------------------------------------------------------
+                if view_option == "📈 भाग 1: विषय काउंटर समरी (Subject Summary Counters)":
+                    st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
+                    
+                    # समरी के अंदर माइनर, एमडीसी स्विच करने के लिए हॉरिजॉन्टल बार
                     selected_category = st.radio(
                         "समीक्षा के लिए विषय प्रकार चुनें:",
                         options=["Minor (माइनर)", "MDC (एम.डी.सी.)", "Vocational (व्यवसायिक)", "Project/PW (परियोजना)"],
@@ -605,7 +610,6 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                         key=f"cat_selector_{deg_info['display']}"
                     )
 
-                    # सिलेक्टेड कैटेगरी के अनुसार कॉलम मैपिंग
                     cat_mapping = {
                         "Minor (माइनर)": {"col_name": minor_col, "rule_key": "minor", "label": "विषय का नाम (Minor Subject)"},
                         "MDC (एम.डी.सी.)": {"col_name": mdc_col, "rule_key": "mdc", "label": "विषय का नाम (MDC Subject)"},
@@ -628,14 +632,14 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                     return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
                                 return [''] * len(row)
                             
-                            # विस्तृत चौड़ाई वाली साफ़ सिंगल-हेडर टेबल
+                            # फुल स्क्रीन चौड़ाई (Width) के साथ सुंदर सिंगल हेडर टेबल
                             st.dataframe(
                                 counts.style.apply(row_styler, axis=1), 
                                 hide_index=True, 
                                 use_container_width=True,
-                                height=220,
+                                height=350,
                                 column_config={
-                                    "Subject": st.column_config.TextColumn(label=current_cat["label"], width=500), 
+                                    "Subject": st.column_config.TextColumn(label=current_cat["label"], width=600), 
                                     "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150)
                                 }
                             )
@@ -643,28 +647,15 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                             st.caption("इस श्रेणी में कोई डेटा उपलब्ध नहीं है।")
                     else:
                         st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
-                else:
-                    st.info("ℹ️ काउंटर समरी वर्तमान में छिपी (Hidden) है। देखने के लिए ऊपर दिए गए चेकबॉक्स पर टिक करें।")
-                
-                st.divider()
-                
-                # ---------------------------------------------------------
-                # भाग 2: विस्तृत छात्र डेटा तालिका (Show/Hide Button Control Enabled)
-                # ---------------------------------------------------------
-                st.markdown(f"### 📋 {deg_info['display']} के छात्रों का विस्तृत डेटा")
-                
-                # 🔒 जादुई बटन: डिफ़ॉल्ट रूप से False (यानी छात्रों की लिस्ट हमेशा छिपी रहेगी)
-                show_full_list = st.checkbox(
-                    f"👀 {deg_info['display']} की पूरी छात्र सूची देखें (Show Student List)", 
-                    value=False, 
-                    key=f"toggle_list_{deg_info['display']}"
-                )
-                
-                # अगर बटन पर टिक किया गया है (True है), तभी अंदर का सर्च बार और टेबल दिखाई देगी
-                if show_full_list:
+
+                # -------------------------------------------------------------------------
+                # 📋 केवल भाग 2 (छात्रों की विस्तृत लिस्ट) लोड होगा, भाग 1 पूरी तरह हाइड रहेगा
+                # -------------------------------------------------------------------------
+                elif view_option == "📋 भाग 2: छात्रों की विस्तृत लिस्ट (Detailed Student List)":
+                    st.markdown(f"### 📋 {deg_info['display']} के सभी छात्रों का विस्तृत डेटा")
                     st.write(f"वर्तमान में इस डिग्री में कुल **{len(df_deg_filtered)}** छात्र रिकॉर्ड उपलब्ध हैं।")
                     
-                    # लाइव सर्च बार फीचर
+                    # 🔍 लाइव सर्च बार फीचर (नाम, रोल नंबर, मोबाइल या विषय से फिल्टर करने के लिए)
                     search_query = st.text_input(
                         f"🔍 {deg_info['display']} डेटा में सर्च करें (नाम, रोल नंबर या विषय डालें):", 
                         key=f"search_{deg_info['display']}"
@@ -672,37 +663,42 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     
                     df_to_show = df_deg_filtered.copy()
                     if search_query:
+                        # किसी भी रो (Row) के किसी भी सेल में टर्म मैच होने पर डेटा फ़िल्टर करना
                         mask = df_to_show.astype(str).apply(lambda row: row.str.contains(search_query, case=False).any(), axis=1)
                         df_to_show = df_to_show[mask]
                     
-                    # पूरी टेबल का लाइव मिसमैच स्टाइलर (गलत विषय लाल रंग में चमकेंगे)
+                    # 🎨 पूरी टेबल का लाइव मिसमैच स्टाइलर फ़ंक्शन
                     def full_table_styler(dataframe):
+                        # खाली बैकग्राउंड के साथ एक ही आकार का समानांतर डेटाफ्रेम बनाना
                         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
+                        
+                        # जिन कॉलम्स को मास्टर गाइडलाइन से चेक करना है उनकी सूची
                         targets = {minor_col: 'minor', mdc_col: 'mdc', voc_col: 'voc', pw_col: 'pw'}
                         
                         for index, row in dataframe.iterrows():
                             for col_name, rule_key in targets.items():
                                 if col_name and col_name in dataframe.columns:
                                     val = row[col_name]
+                                    
+                                    # 🔵 स्थिति 1: यदि सेल पूरी तरह खाली है तो नीला करें
                                     if pd.isna(val) or str(val).strip() == "":
-                                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold;'
+                                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
                                     else:
                                         val_clean = str(val).strip().lower()
                                         valid_list = deg_rule.get(rule_key, [])
                                         valid_set = {str(x).strip().lower() for x in valid_list}
+                                        
+                                        # 🔴 स्थिति 2: यदि विषय मास्टर नियमावली में लॉक किए गए विषयों से मिसमैच है तो लाल करें
                                         if valid_set and (val_clean not in valid_set):
-                                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'
+                                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
                         return s_df
-
-                    # मुख्य डेटाबेस ग्रिड व्यूअर
+                
+                    # 🖥️ फुल स्क्रीन चौड़ाई (Full Width) के साथ छात्रों की बड़ी मुख्य तालिका रेंडर करना
                     st.dataframe(
                         df_to_show.style.apply(full_table_styler, axis=None),
-                        height=400,
+                        height=550, # टेबल की ऊंचाई थोड़ी बढ़ा दी गई है ताकि अधिक रोज़ एक साथ दिखें
                         use_container_width=True
                     )
-                else:
-                    # जब बटन बंद होगा, तो यह छोटा सा संदेश दिखेगा और बड़ी लिस्ट छिपी रहेगी
-                    st.info(f"ℹ️ {deg_info['display']} छात्र सूची वर्तमान में छिपी (Hidden) है। देखने के लिए ऊपर दिए गए चेकबॉक्स पर टिक करें।")
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
