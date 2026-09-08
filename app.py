@@ -264,6 +264,11 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     csv_validated = display_df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label=f"📥 वैरिफाइड {prefix.upper()} डेटा डाउनलोड करें",
+        data=csv_validated,
+        file_name=f"Verified_{prefix.upper()}_Data.csv",
+        mime="text/csv",
+        key=f"download_validated_{prefix}"
+    )
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
