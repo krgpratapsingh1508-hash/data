@@ -630,64 +630,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                         st.caption("कोई डेटा नहीं")
                                 else:
                                     st.caption("कॉलम नहीं मिला")
-            
-            for cat in categories:
-                with cat["ui_col"]:
-                    st.markdown(f"#### {cat['label']}")
-                    
-                    if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
-                        #  नया कोड (इसे पेस्ट करें)
-                        counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
-                        
-                        # English ऊपर और Hindi नीचे (\n के साथ)
-                        counts.columns = ["Subject Name\n(विषय का नाम)", "Total Students\n(कुल छात्र)"]
-                        
-                        if not counts.empty:
-                            #  इस नए और सही कोड को पेस्ट करें
-                            # वैध विषयों की सेट तैयार करना
-                            valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
-                            
-                            # स्टाइलर फ़ंक्शन (अपडेटेड हेडर नाम के साथ)
-                            def row_styler(row):
-                                # अब यह नए हेडर नाम "Subject Name\n(विषय का नाम)" को ढूंढेगा
-                                sub_val = str(row["Subject Name\n(विषय का नाम)"]).strip().lower()
-                                
-                                # यदि विषय मास्टर नियम सूची में मौजूद नहीं है तो रो को लाल (Red) करें
-                                if valid_subjects_set and (sub_val not in valid_subjects_set):
-                                    return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
-                                return [''] * len(row)
-                            
-                            #  इस नए कोड को पेस्ट करें (जो हेडर की हाइट बढ़ाकर टेक्स्ट को रैप करेगा)
-                            st.dataframe(
-                                counts.style.apply(row_styler, axis=1).set_table_styles([
-                                    {
-                                        'selector': 'th',
-                                        'props': [
-                                            ('white-space', 'pre-wrap'),       # टेक्स्ट को नीचे की लाइन में रैप (Wrap) करने के लिए
-                                            ('word-wrap', 'break-word'),
-                                            ('height', '50px'),                # हेडर की ऊंचाई बढ़ाई ताकि दोनों लाइनें साफ दिखें
-                                            ('text-align', 'left'),          # टेक्स्ट को सुरुचिपूर्ण ढंग से लेफ्ट अलाइन करने के लिए
-                                            ('vertical-align', 'middle'),
-                                            ('padding', '8px')                 # हवादार और साफ लुक के लिए पैडिंग
-                                        ]
-                                    },
-                                    {
-                                        'selector': 'td',
-                                        'props': [
-                                            ('padding', '6px'),
-                                            ('vertical-align', 'middle')
-                                        ]
-                                    }
-                                ]), 
-                                hide_index=True, 
-                                use_container_width=True
-                            )
-                        else:
-                            st.caption("कोई डेटा नहीं")
-                    else:
-                        st.caption("कॉलम नहीं मिला")
-            st.divider()
-
+                                    
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
 # =========================================================================
