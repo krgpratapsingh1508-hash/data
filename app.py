@@ -293,4 +293,99 @@ elif panel == "🎓 3. UG Panel":
         # (यह ऑटोमैटिकली गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा)
         process_panel_validation(df_ug, "ug", allowed_ug_degrees)
 
+# =========================================================================
+# 📜 PANEL 4: PG PANEL (सिर्फ अप्रूव्ड PG डेटा की लाइव चेकिंग और त्रुटि सुधार)
+# =========================================================================
+elif panel == "📜 4. PG Panel":
+    st.title("📜 Postgraduate (PG) चेकिंग एवं त्रुटि सुधार पैनल")
+    st.write("यहाँ Panel 2 से अप्रूव होकर आया हुआ शुद्ध PG डेटा प्रदर्शित हो रहा है।")
+    
+    # परमानेंट डेटाबेस से केवल PG का डेटा लोड करना
+    df_pg = load_permanent_data("PG")
+    
+    if df_pg is None:
+        st.info("ℹ️ PG डेटाबेस में अभी कोई डेटा लॉक नहीं है। कृपया पहले **Panel 2 (Work / Approve Panel)** में जाकर डेटा अप्रूव करें।")
+    else:
+        # आवश्यक कोर्सेस/डिग्री की सूची जिन्हें इस पैनल में प्रोसेस करना है
+        allowed_pg_degrees = ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"]
+        
+        # कोर वैलिडेशन और लाइव हाइलाइटिंग टेबल को रन करना
+        # (यह ऑटोमैटिकली गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा)
+        process_panel_validation(df_pg, "pg", allowed_pg_degrees)
+
+# =========================================================================
+# ⚙️ PANEL 5: ADMIN PANEL (मास्टर कंट्रोल, बैकअप डाउनलोड एवं डेटा रीसेट)
+# =========================================================================
+elif panel == "⚙️ 5. Admin Panel":
+    st.title("⚙️ Admin Panel - मास्टर डेटाबेस कंट्रोल")
+    st.write("यह केवल एडमिनिस्ट्रेटर के लिए है। यहाँ से आप पूरे डेटा का बैकअप ले सकते हैं और सिस्टम को रीसेट कर सकते हैं।")
+    
+    # 📥 सेक्शन 1: बैकअप और डाउनलोड (Backup & Export)
+    st.divider()
+    st.subheader("📥 डेटाबेस बैकअप डाउनलोड करें")
+    st.write("डेटाबेस खाली करने से पहले या काम पूरा होने पर आप यहाँ से फ़ाइल डाउनलोड कर सकते हैं।")
+    
+    # दोनों प्रकार का डेटा लोड करना
+    df_ug_download = load_permanent_data("UG")
+    df_pg_download = load_permanent_data("PG")
+    
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("#### 🎓 UG डेटा बैकअप")
+        if df_ug_download is not None and not df_ug_download.empty:
+            st.success(f"कुल रिकॉर्ड्स उपलब्ध: {len(df_ug_download)}")
+            # CSV में कनवर्ट करना
+            csv_ug = df_ug_download.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 UG डेटा CSV डाउनलोड करें",
+                data=csv_ug,
+                file_name="Approved_UG_Data_Backup.csv",
+                mime="text/csv",
+                key="download_ug_csv"
+            )
+        else:
+            st.info("UG डेटाबेस में डाउनलोड के लिए कोई डेटा नहीं है।")
+            
+    with c2:
+        st.markdown("#### 📜 PG डेटा बैकअप")
+        if df_pg_download is not None and not df_pg_download.empty:
+            st.success(f"कुल रिकॉर्ड्स उपलब्ध: {len(df_pg_download)}")
+            # CSV में कनवर्ट करना
+            csv_pg = df_pg_download.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 PG डेटा CSV डाउनलोड करें",
+                data=csv_pg,
+                file_name="Approved_PG_Data_Backup.csv",
+                mime="text/csv",
+                key="download_pg_csv"
+            )
+        else:
+            st.info("PG डेटाबेस में डाउनलोड के लिए कोई डेटा नहीं है।")
+
+    # 🚨 सेक्शन 2: डेंजर ज़ोन (Danger Zone - डेटा रीसेट)
+    st.divider()
+    st.subheader("🚨 डेंजर ज़ोन (Danger Zone)")
+    st.warning("सावधान: यहाँ से किया गया बदलाव पूरे सिस्टम के डेटा को हमेशा के लिए मिटा देगा।")
+    
+    # आकस्मिक डिलीट से बचने के लिए डबल कन्फर्मेशन चेकबॉक्स
+    confirm_reset = st.checkbox("हाँ, मैं पुष्टि करता/करती हूँ कि मुझे रॉ (Temporary) और अप्रूव्ड (Permanent) दोनों डेटाबेस पूरी तरह से खाली करने हैं।")
+    
+    if st.button("💥 ऑल डेटाबेस रीसेट करें (Reset System)"):
+        if confirm_reset:
+            # दोनों टेबल्स को साफ़ करना
+            cursor.execute("DELETE FROM raw_store")
+            cursor.execute("DELETE FROM perma_store")
+            conn.commit()
+            
+            # सेशन स्टेट रीसेट करना
+            st.session_state["deleted_cols"] = []
+            
+            st.success("🎉 सिस्टम को सफलतापूर्वक रीसेट कर दिया गया है! सभी टेबल्स खाली हो चुके हैं।")
+            st.balloons()
+            st.rerun()
+        else:
+            st.error("त्रुटि: कृपया डेटाबेस खाली करने से पहले ऊपर दिए गए 'पुष्टि चेकबॉक्स' को टिक करें।")
+
+
 
