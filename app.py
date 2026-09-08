@@ -35,6 +35,8 @@ cursor.execute("""
         rules_json TEXT
     )
 """)
+
+# सुनिश्चित करें कि टेबल बनने के बाद डेटाबेस में बदलाव सुरक्षित (Commit) हो जाएं
 conn.commit()
 
 # Session States Management
