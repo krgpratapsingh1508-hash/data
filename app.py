@@ -672,6 +672,18 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     actual_voc = next((c for c in df_to_show.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
                     actual_pw = next((c for c in df_to_show.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
                 
+                    # 🔒 डेटाबेस से P3 (UG Panel) के नियमों को बिल्कुल सही तरीके से दोबारा लोड करना (फिक्स किया गया)
+                    current_deg_rules = {}
+                    try:
+                        cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
+                        locked_row = cursor.fetchone()
+                        if locked_row and locked_row[0]:
+                            all_rules = json.loads(locked_row[0])
+                            # वर्तमान डिग्री (जैसे BA, B.Com.) के नियम निकालना
+                            current_deg_rules = all_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
+                    except Exception as e:
+                        st.error(f"नियम लोड करने में त्रुटि: {e}")
+                
                     # --- 📊 लाइव काउंटर मीटर (खाली और गलत सेल की गिनती के लिए गणना) ---
                     blank_count = 0
                     wrong_count = 0
@@ -690,9 +702,11 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                 if pd.isna(val) or str(val).strip() == "":
                                     blank_count += 1
                                 else:
-                                    val_clean = str(val).strip().lower()
-                                    valid_list = deg_rule.get(rule_key, [])
-                                    valid_set = {str(x).strip().lower() for x in valid_list}
+                                    val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
+                                    valid_list = current_deg_rules.get(rule_key, [])
+                                    valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
+                                    
+                                    # 🚨 सुधार: अगर P3 में विषय चुने गए हैं, और छात्र का विषय उसमें नहीं है, तो वह निश्चित ही गलत (Wrong) है
                                     if valid_set and (val_clean not in valid_set):
                                         wrong_count += 1
                 
@@ -705,13 +719,12 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     with metric_c3:
                         st.metric(label="🔴 कुल गलत विषय (Rule Mismatch)", value=wrong_count)
                 
-                    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर नियमावली से मिसमैच)")
+                    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (Panel 3 में आपके द्वारा चुने गए विषयों के अलावा बाकी सब)")
                 
                     # --- 🎨 फिक्स किया गया लाइव कलर कोडिंग स्टाइलर इंजन ---
                     def full_table_styler(dataframe):
                         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
                         
-                        # वर्तमान डेटाफ़्रेम के वास्तविक कॉलमों के आधार पर मैपिंग
                         targets = {
                             actual_minor: 'minor', 
                             actual_mdc: 'mdc', 
@@ -724,15 +737,15 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                 if col_name and col_name in dataframe.columns:
                                     val = row[col_name]
                                     
-                                    # 🔵 कंडीशन 1: अगर सेल खाली है तो तुरंत गहरा नीला करें
+                                    # 🔵 कंडीशन 1: अगर सेल खाली (Blank) है तो तुरंत गहरा नीला करें
                                     if pd.isna(val) or str(val).strip() == "":
                                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
                                     
-                                    # 🔴 कंडीशन 2: अगर विषय भरा है पर मास्टर नियमों में नहीं है तो गाढ़ा लाल करें
+                                    # 🔴 कंडीशन 2: अगर विषय भरा है पर Panel 3 में आपके द्वारा बताए गए 'सही' विषयों की सूची में नहीं है तो गाढ़ा लाल करें
                                     else:
-                                        val_clean = str(val).strip().lower()
-                                        valid_list = deg_rule.get(rule_key, [])
-                                        valid_set = {str(x).strip().lower() for x in valid_list}
+                                        val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
+                                        valid_list = current_deg_rules.get(rule_key, [])
+                                        valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
                                         
                                         if valid_set and (val_clean not in valid_set):
                                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'
