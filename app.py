@@ -513,11 +513,11 @@ elif panel == "📜 4. PG Panel":
         process_panel_validation(df_pg, "pg", ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"])
 
 # =========================================================================
-# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (टैब्स आधारित लाइव वैलिडेशन काउंटर)
+# 📊 PANEL 5: DASHBOARD / COUNTER PANEL (एडवांस टैब्स और फुल डेटा व्यूअर)
 # =========================================================================
 elif panel == "📊 5. Dashboard / Counter Panel":
-    st.title("📊 Dashboard - डिग्री-वाइज विषयों की लाइव गणना एवं त्रुटि सुधार")
-    st.write("नीचे दिए गए टैब पर क्लिक करके अपनी संबंधित डिग्री (BA, B.Com, B.Sc, B.H.Sc) का लाइव काउंटर और त्रुटि स्थिति देखें।")
+    st.title("📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
+    st.write("नीचे दिए गए टैब पर क्लिक करके संबंधित डिग्री का लाइव काउंट देखें और उसके ठीक नीचे पूरे छात्र डेटाबेस की समीक्षा करें।")
     
     # UG और PG दोनों का डेटा लोड करना
     df_ug_all = load_permanent_data("UG")
@@ -557,14 +557,13 @@ elif panel == "📊 5. Dashboard / Counter Panel":
             {"display": "B.H.Sc.", "keywords": ["bhsc"]}
         ]
 
-        # ✨ जादू यहाँ है: सभी डिग्रियों के लिए अलग-अलग क्लिक करने योग्य टैब्स बनाएँ
+        # सभी डिग्रियों के लिए इंटरएक्टिव टैब्स
         tab_titles = [deg["display"] for deg in target_degrees]
         tabs = st.tabs(tab_titles)
 
-        # प्रत्येक टैब के अंदर केवल उसी डिग्री का डेटा प्रोसेस और शो करना
         for index, deg_info in enumerate(target_degrees):
-            with tabs[index]:  # यूजर जिस डिग्री टैब पर क्लिक करेगा वही ओपन होगा
-                st.markdown(f"### 🎓 {deg_info['display']} विषय लाइव काउंटर स्थिति")
+            with tabs[index]:
+                st.markdown(f"## 🎓 {deg_info['display']} डैशबोर्ड")
                 
                 # छात्र सूची में से इस विशिष्ट डिग्री के छात्रों को फ़िल्टर करना
                 if deg_col and deg_col in master_df.columns:
@@ -584,12 +583,13 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     st.warning(f"⚠️ डेटाबेस में `{deg_info['display']}` का कोई छात्र रिकॉर्ड नहीं मिला।")
                     continue
                     
-                # इस डिग्री के लिए मास्टर नियम निकालना
+                # ---------------------------------------------------------
+                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters)
+                # ---------------------------------------------------------
+                st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
                 deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
                 
-                # स्क्रीन को 4 समानांतर भागों (कोशिकाओं) में बांटना
                 ui_cols = st.columns(4)
-                
                 categories = [
                     {"label": "Minor (माइनर)", "col_name": minor_col, "rule_key": "minor", "col_idx": 0},
                     {"label": "MDC (एम.डी.सी.)", "col_name": mdc_col, "rule_key": "mdc", "col_idx": 1},
@@ -599,35 +599,30 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 
                 for cat in categories:
                     with ui_cols[cat["col_idx"]]:
-                        st.markdown(f"#### {cat['label']}")
-                        
+                        st.markdown(f"##### {cat['label']}")
                         if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
-                            # काउंट्स (फ्रीक्वेंसी) की लाइव गणना
                             counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
                             counts.columns = ["Subject", "Count"]
                             
                             if not counts.empty:
-                                # मास्टर नियम से वैध विषयों का सेट बनाना
                                 valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
                                 
-                                # गलत या मिसमैच विषयों को लाल रंग में दिखाने का स्टाइलर नियम
                                 def row_styler(row):
                                     sub_val = str(row["Subject"]).strip().lower()
                                     if valid_subjects_set and (sub_val not in valid_subjects_set):
                                         return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
                                     return [''] * len(row)
                                 
-                                # स्वच्छ हेडर लेबल्स
                                 if cat["rule_key"] == "pw":
-                                    st.markdown("**Project Type**<br><span style='color:gray; font-size:13px;'>(प्रोजेक्ट प्रकार)</span>", unsafe_allow_html=True)
+                                    st.markdown("**Project Type**<br><span style='color:gray; font-size:12px;'>(प्रोजेक्ट प्रकार)</span>", unsafe_allow_html=True)
                                 else:
-                                    st.markdown("**Subject Name**<br><span style='color:gray; font-size:13px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
+                                    st.markdown("**Subject Name**<br><span style='color:gray; font-size:12px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
                                 
-                                # ग्रिड टेबल रेंडर इंजन
                                 st.dataframe(
                                     counts.style.apply(row_styler, axis=1), 
                                     hide_index=True, 
                                     use_container_width=True,
+                                    height=180,
                                     column_config={
                                         "Subject": st.column_config.TextColumn(label=" ", width="medium"),
                                         "Count": st.column_config.NumberColumn(label=" ", width="small")
@@ -637,6 +632,49 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                 st.caption("कोई डेटा नहीं")
                         else:
                             st.caption("कॉलम नहीं मिला")
+                
+                st.divider()
+                
+                # ---------------------------------------------------------
+                # भाग 2: विस्तृत छात्र डेटा तालिका (Detailed Data View)
+                # ---------------------------------------------------------
+                st.markdown(f"### 📋 {deg_info['display']} के सभी छात्रों का विस्तृत डेटा")
+                st.write(f"वर्तमान में इस डिग्री में कुल **{len(df_deg_filtered)}** छात्र रिकॉर्ड उपलब्ध हैं।")
+                
+                # लाइव सर्च बार फीचर
+                search_query = st.text_input(f"🔍 {deg_info['display']} डेटा में सर्च करें (नाम, रोल नंबर या विषय डालें):", key=f"search_{deg_info['display']}")
+                
+                df_to_show = df_deg_filtered.copy()
+                if search_query:
+                    # किसी भी कॉलम में सर्च टर्म मैच होने पर डेटा फ़िल्टर करना
+                    mask = df_to_show.astype(str).apply(lambda row: row.str.contains(search_query, case=False).any(), axis=1)
+                    df_to_show = df_to_show[mask]
+                
+                # छात्रों की मास्टर रूल चेकिंग आधारित लाइव हाइलाइटिंग (त्रुटि सुधार के लिए लाल रंग)
+                def full_table_styler(dataframe):
+                    s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
+                    targets = {minor_col: 'minor', mdc_col: 'mdc', voc_col: 'voc', pw_col: 'pw'}
+                    
+                    for index, row in dataframe.iterrows():
+                        for col_name, rule_key in targets.items():
+                            if col_name and col_name in dataframe.columns:
+                                val = row[col_name]
+                                if pd.isna(val) or str(val).strip() == "":
+                                    s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold;'
+                                else:
+                                    val_clean = str(val).strip().lower()
+                                    valid_list = deg_rule.get(rule_key, [])
+                                    valid_set = {str(x).strip().lower() for x in valid_list}
+                                    if valid_set and (val_clean not in valid_set):
+                                        s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'
+                    return s_df
+
+                # डेटा फ्रेम को बड़ी स्क्रीन ग्रिड लेआउट में प्रदर्शित करना
+                st.dataframe(
+                    df_to_show.style.apply(full_table_styler, axis=None),
+                    height=400,
+                    use_container_width=True
+                )
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
