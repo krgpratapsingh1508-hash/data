@@ -587,15 +587,49 @@ elif panel == "📊 5. Dashboard / Counter Panel":
             # इस डिग्री के लिए मास्टर नियम निकालना
             deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
             
-            # 4 मुख्य विषयों के लिए 4 कॉलम लेआउट बनाना
-            c1, c2, c3, c4 = st.columns(4)
-            
-            categories = [
-                {"col_name": minor_col, "rule_key": "minor", "label": "📘 Minor विषय", "ui_col": c1},
-                {"col_name": mdc_col, "rule_key": "mdc", "label": "📙 MDC विषय", "ui_col": c2},
-                {"col_name": voc_col, "rule_key": "voc", "label": "🛠️ Vocational विषय", "ui_col": c3},
-                {"col_name": pw_col, "rule_key": "pw", "label": "🔬 Project / CE प्रकार", "ui_col": c4}
-            ]
+                        for cat in categories:
+                            with cat["ui_col"]:
+                                # 1. मुख्य विषय का टाइटल (जैसे: Minor विषय)
+                                st.markdown(f"#### {cat['label']}")
+                                
+                                if cat["col_name"] and cat["col_name"] in df_deg_filtered.columns:
+                                    # काउंट निकालना
+                                    counts = df_deg_filtered[cat["col_name"]].dropna().value_counts().reset_index()
+                                    
+                                    # 2. यहाँ हम हेडर का नाम बिल्कुल साफ और छोटा रखेंगे ताकि ग्रिड न टूटे
+                                    counts.columns = ["Subject", "Count"]
+                                    
+                                    if not counts.empty:
+                                        # वैध विषयों की सूची (मास्टर नियम से)
+                                        valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(cat["rule_key"], [])}
+                                        
+                                        def row_styler(row):
+                                            sub_val = str(row["Subject"]).strip().lower()
+                                            if valid_subjects_set and (sub_val not in valid_subjects_set):
+                                                return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
+                                            return [''] * len(row)
+                                        
+                                        # 3. ✨ जादुई कस्टम हेडर जो हमेशा English ऊपर और Hindi नीचे दिखाएगा
+                                        if cat["rule_key"] == "pw":
+                                            st.markdown("**Project Type**<br><span style='color:gray; font-size:13px;'>(प्रोजेक्ट प्रकार)</span>", unsafe_allow_html=True)
+                                        else:
+                                            st.markdown("**Subject Name**<br><span style='color:gray; font-size:13px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
+                                        
+                                        # 4. डेटा टेबल दिखाना (जिसका अपना हेडर हमने छिपा दिया है)
+                                        st.dataframe(
+                                            counts.style.apply(row_styler, axis=1), 
+                                            hide_index=True, 
+                                            use_container_width=True,
+                                            # यह लाइन टेबल के अंदर के डिफ़ॉल्ट हेडर को गायब कर देगी
+                                            column_config={
+                                                "Subject": st.column_config.TextColumn(label=" ", width="medium"),
+                                                "Count": st.column_config.NumberColumn(label=" ", width="small")
+                                            }
+                                        )
+                                    else:
+                                        st.caption("कोई डेटा नहीं")
+                                else:
+                                    st.caption("कॉलम नहीं मिला")
             
             for cat in categories:
                 with cat["ui_col"]:
