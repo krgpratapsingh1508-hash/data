@@ -596,9 +596,9 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 
                 st.divider()
 
-                # ---------------------------------------------------------
-                # 📈 केवल भाग 1 (विषय काउंटर समरी) लोड होगा, भाग 2 पूरी तरह हाइड रहेगा
-                # ---------------------------------------------------------
+                # -------------------------------------------------------------------------
+                # 📈 केवल भाग 1 (विषय काउंटर समरी) - लाइव कलर कोडिंग और अमान्य विषय रेड फिक्स
+                # -------------------------------------------------------------------------
                 if view_option == "📈 भाग 1: विषय काउंटर समरी (Subject Summary Counters)":
                     st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
                     
@@ -609,30 +609,51 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                         horizontal=True,
                         key=f"cat_selector_{deg_info['display']}"
                     )
-
+                
+                    # 🔒 डेटाबेस से P3 (UG Panel) के नियमों को बिल्कुल सही तरीके से लोड करना
+                    current_deg_rules = {}
+                    try:
+                        cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
+                        locked_row = cursor.fetchone()
+                        if locked_row and locked_row[0]:
+                            all_rules = json.loads(locked_row[0])
+                            current_deg_rules = all_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
+                    except Exception as e:
+                        pass
+                
                     cat_mapping = {
                         "Minor (माइनर)": {"col_name": minor_col, "rule_key": "minor", "label": "विषय का नाम (Minor Subject)"},
                         "MDC (एम.डी.सी.)": {"col_name": mdc_col, "rule_key": "mdc", "label": "विषय का नाम (MDC Subject)"},
                         "Vocational (व्यवसायिक)": {"col_name": voc_col, "rule_key": "voc", "label": "विषय का नाम (Vocational Subject)"},
                         "Project/PW (परियोजना)": {"col_name": pw_col, "rule_key": "pw", "label": "प्रोजेक्ट प्रकार (Project Type)"}
                     }
-
+                
                     current_cat = cat_mapping[selected_category]
-
+                
                     if current_cat["col_name"] and current_cat["col_name"] in df_deg_filtered.columns:
+                        # काउंट्स (फ्रीक्वेंसी) की लाइव गणना
                         counts = df_deg_filtered[current_cat["col_name"]].dropna().value_counts().reset_index()
                         counts.columns = ["Subject", "Count"]
                         
                         if not counts.empty:
-                            valid_subjects_set = {str(x).strip().lower() for x in deg_rule.get(current_cat["rule_key"], [])}
+                            # P3 के लॉक नियमों से वैध विषयों का क्लीन सेट बनाना
+                            valid_list = current_deg_rules.get(current_cat["rule_key"], [])
+                            valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
                             
+                            # ✨ भाग 1 के लिए नया सख्त रो स्टाइलर इंजन (गलत विषय = चमकदार गाढ़ा लाल)
                             def row_styler(row):
-                                sub_val = str(row["Subject"]).strip().lower()
-                                if valid_subjects_set and (sub_val not in valid_subjects_set):
-                                    return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
+                                sub_val = str(row["Subject"]).strip().lower().replace(".", "").replace(" ", "")
+                                # यदि P3 में विषय चुने गए हैं और छात्र का विषय उसमें नहीं है, तो पूरी रो लाल होगी
+                                if valid_set and (sub_val not in valid_set):
+                                    return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'] * len(row)
                                 return [''] * len(row)
                             
-                            # फुल स्क्रीन चौड़ाई (Width) के साथ सुंदर सिंगल हेडर टेबल
+                            if current_cat["rule_key"] == "pw":
+                                st.markdown("**Project Type Summary**<br><span style='color:gray; font-size:12px;'>(प्रोजेक्ट प्रकार की समरी सूची)</span>", unsafe_allow_html=True)
+                            else:
+                                st.markdown("**Subject Distribution Summary**<br><span style='color:gray; font-size:12px;'>(विषय आवंटन की समरी सूची)</span>", unsafe_allow_html=True)
+                            
+                            # फुल स्क्रीन चौड़ाई (Width) के साथ काउंटर तालिका रेंडर करना
                             st.dataframe(
                                 counts.style.apply(row_styler, axis=1), 
                                 hide_index=True, 
