@@ -623,10 +623,27 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                     return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
                                 return [''] * len(row)
                             
-                            #  नया डिस्प्ले कोड (जो न्यू-लाइन को सपोर्ट करेगा)
+                            #  इस नए कोड को पेस्ट करें (जो हेडर की हाइट बढ़ाकर टेक्स्ट को रैप करेगा)
                             st.dataframe(
                                 counts.style.apply(row_styler, axis=1).set_table_styles([
-                                    {'selector': 'th', 'props': [('white-space', 'pre-wrap'), ('text-align', 'center')]}
+                                    {
+                                        'selector': 'th',
+                                        'props': [
+                                            ('white-space', 'pre-wrap'),       # टेक्स्ट को नीचे की लाइन में रैप (Wrap) करने के लिए
+                                            ('word-wrap', 'break-word'),
+                                            ('height', '50px'),                # हेडर की ऊंचाई बढ़ाई ताकि दोनों लाइनें साफ दिखें
+                                            ('text-align', 'left'),          # टेक्स्ट को सुरुचिपूर्ण ढंग से लेफ्ट अलाइन करने के लिए
+                                            ('vertical-align', 'middle'),
+                                            ('padding', '8px')                 # हवादार और साफ लुक के लिए पैडिंग
+                                        ]
+                                    },
+                                    {
+                                        'selector': 'td',
+                                        'props': [
+                                            ('padding', '6px'),
+                                            ('vertical-align', 'middle')
+                                        ]
+                                    }
                                 ]), 
                                 hide_index=True, 
                                 use_container_width=True
