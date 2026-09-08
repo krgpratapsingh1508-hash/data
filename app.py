@@ -33,7 +33,7 @@ conn.commit()
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 
-# --- LOGIN SYSTEM WITH PASSWORD ---
+# --- LOGIN SYSTEM ---
 if not st.session_state["ok"]:
     st.title("🔒 Login System")
     user = st.selectbox("Username:", ["-- चुनें --", "Admin", "Operator", "Teacher_UG", "Teacher_PG"])
@@ -48,7 +48,7 @@ if not st.session_state["ok"]:
     st.stop()
 
 # =========================================================================
-# 5 रोल-बेस्ड पैनल्स का नेविगेशन (5 Panels Structure)
+# 5 रोल-बेस्ड पैनल्स का नेविगेशन
 # =========================================================================
 u = st.session_state["user"]
 
@@ -69,12 +69,12 @@ else:
 
 panel = st.sidebar.radio("पैनल चुनें:", p_opts)
 
-# डेटाबेस से डेटा लोड करने के सहायक फंक्शंस
+# डेटाबेस से डेटा लोड करने के फंक्शंस
 def load_raw_data():
     cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
     if row:
-        return pd.DataFrame(json.loads(row[0]))
+        return pd.DataFrame(json.loads(row))
     return None
 
 def load_permanent_data(c_type):
@@ -83,16 +83,16 @@ def load_permanent_data(c_type):
     if rows:
         dfs = []
         for r in rows:
-            dfs.append(pd.DataFrame(json.loads(r[0])))
+            dfs.append(pd.DataFrame(json.loads(r)))
         return pd.concat(dfs, ignore_index=True)
     return None
 
 # =========================================================================
-# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, सख्त प्रोजेक्ट/इंटरर्नशिप एवं एमडीसी सिंक नियम
+# 🧠 कोर फंक्शन: लाइव चेकिंग, स्टाइलिंग, प्रोजेक्ट लॉजिक एवं BA/B.Sc MDC + VOC सिंक नियम
 # =========================================================================
 def process_panel_validation(df_panel, prefix, allowed_degrees):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
-    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
+    br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[1] if len(df_panel.columns) > 1 else df_panel.columns[0])
     
     def check_degree(val):
         v = str(val).lower().replace(".", "").replace(" ", "").strip()
@@ -118,12 +118,16 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     opt_voc = df_filtered[voc_col].dropna().unique().tolist() if (voc_col and voc_col in df_filtered.columns) else []
     opt_pw = df_filtered[pw_col].dropna().unique().tolist() if (pw_col and pw_col in df_filtered.columns) else []
     
-    # --- BA और B.Sc. MDC मास्टर सिंक स्टेट मैनेजमेंट ---
-    ba_sync_key = f"ba_mdc_master_sync_{prefix}"
-    bsc_sync_key = f"bsc_mdc_master_sync_{prefix}"
+    # --- BA और B.Sc. के लिए MDC और Vocational मास्टर सिंक स्टेट मैनेजमेंट ---
+    ba_mdc_sync_key = f"ba_mdc_sync_{prefix}"
+    ba_voc_sync_key = f"ba_voc_sync_{prefix}"
+    bsc_mdc_sync_key = f"bsc_mdc_sync_{prefix}"
+    bsc_voc_sync_key = f"bsc_voc_sync_{prefix}"
     
-    if ba_sync_key not in st.session_state: st.session_state[ba_sync_key] = []
-    if bsc_sync_key not in st.session_state: st.session_state[bsc_sync_key] = []
+    if ba_mdc_sync_key not in st.session_state: st.session_state[ba_mdc_sync_key] = []
+    if ba_voc_sync_key not in st.session_state: st.session_state[ba_voc_sync_key] = []
+    if bsc_mdc_sync_key not in st.session_state: st.session_state[bsc_mdc_sync_key] = []
+    if bsc_voc_sync_key not in st.session_state: st.session_state[bsc_voc_sync_key] = []
 
     rules = {}
     
@@ -131,7 +135,7 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     has_bsc = any("bsc" in combo.lower().replace(".", "").replace(" ", "") for combo in unique_combos)
     
     if has_ba or has_bsc:
-        st.info("💡 **विशेष नियम सक्रिय:** आप किसी भी BA या B.Sc. का MDC बदलेंगे, वह उस डिग्री के सभी ब्रांचों में स्वतः एक साथ लागू हो जाएगा।")
+        st.info("💡 **मास्टर सिंक नियम सक्रिय:** आप किसी भी BA या B.Sc. कोर्स का MDC या Vocational बदलेंगे, वह उस डिग्री के सभी कोर्सेस पर एक साथ स्वचालित रूप से लागू हो जाएगा।")
     
     for idx, combo in enumerate(unique_combos):
         st.markdown(f"#### 📍 `{combo}`")
@@ -139,38 +143,51 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         
         combo_lower = combo.lower().replace(".", "").replace(" ", "")
         
-        # डिग्री प्रकार की पहचान
+        # डिग्री प्रकारों की पहचान
         is_ba_course = "ba-" in combo_lower or (combo_lower.startswith("ba") and not combo_lower.startswith("ba(ex") and "bsc" not in combo_lower and "bcom" not in combo_lower)
         is_bsc_course = "bsc" in combo_lower
         
-        # --- सख्त डिफ़ॉल्ट नियम (सभी के लिए केवल Project Work) ---
+        # --- सख्त डिफ़ॉल्ट नियम (सभी सामान्य कोर्सेस के लिए केवल Project Work) ---
         default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw"]]
         if not default_pw_selection:
             default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() and 'research' not in str(x).lower()]
 
         # --- विशेष नियम: केवल B.Sc. Biotechnology के लिए (Microbio या अन्य के लिए नहीं) ---
         if is_bsc_course and "biotech" in combo_lower:
-            # केवल बायोटेक में ही इंटर्नशिप को वैध मानकर जोड़ेंगे
             internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
             default_pw_selection.extend(internship_opts)
-            default_pw_selection = list(set(default_pw_selection)) # डुप्लिकेट साफ करना
+            default_pw_selection = list(set(default_pw_selection))
             
         with c1: 
+            # MDC मास्टर सिंक लॉजिक (BA/B.Sc.)
             if is_ba_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_sync_key], key=f"mdc_{prefix}_{idx}")
-                if r_mdc != st.session_state[ba_sync_key]:
-                    st.session_state[ba_sync_key] = r_mdc
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[ba_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                if r_mdc != st.session_state[ba_mdc_sync_key]:
+                    st.session_state[ba_mdc_sync_key] = r_mdc
                     st.rerun()
             elif is_bsc_course:
-                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_sync_key], key=f"mdc_{prefix}_{idx}")
-                if r_mdc != st.session_state[bsc_sync_key]:
-                    st.session_state[bsc_sync_key] = r_mdc
+                r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, default=st.session_state[bsc_mdc_sync_key], key=f"mdc_{prefix}_{idx}")
+                if r_mdc != st.session_state[bsc_mdc_sync_key]:
+                    st.session_state[bsc_mdc_sync_key] = r_mdc
                     st.rerun()
             else:
                 r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
                 
         with c2: 
-            r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
+            # Vocational (Skill) मास्टर सिंक लॉजिक (BA/B.Sc.)
+            if is_ba_course:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[ba_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                if r_voc != st.session_state[ba_voc_sync_key]:
+                    st.session_state[ba_voc_sync_key] = r_voc
+                    st.rerun()
+            elif is_bsc_course:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, default=st.session_state[bsc_voc_sync_key], key=f"voc_{prefix}_{idx}")
+                if r_voc != st.session_state[bsc_voc_sync_key]:
+                    st.session_state[bsc_voc_sync_key] = r_voc
+                    st.rerun()
+            else:
+                r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
+                
         with c3: 
             r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
             
@@ -225,33 +242,25 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
     )
 
 # =========================================================================
-# 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
+# 📥 PANEL 1: ENTRY / UPLOAD PANEL (Safe Data Staging Workspace)
 # =========================================================================
 if panel == "📥 1. Entry / Upload Panel":
     st.title("📥 Entry Panel - डेटा सुरक्षित अपलोड")
-    st.write("यहाँ अपनी मुख्य एक्सेल/CSV फ़ाइल अपलोड करें। यह डेटा सीधे समीक्षा और क्लीनिंग के लिए **Work / Approve Panel (P2)** में ट्रांसफर हो जाएगा।")
+    st.write("यहाँ अपलोड की गई फ़ाइल सीधे समीक्षा और क्लीनिंग के लिए **Work / Approve Panel (P2)** में ट्रांसफर हो जाएगी।")
     
-    # एक्सेल या सीएसवी फ़ाइल अपलोड करने का विकल्प
     f = st.file_uploader("अपनी फ़ाइल अपलोड करें", type=["csv", "xlsx"])
     if f:
         try:
-            # फ़ाइल टाइप के अनुसार डेटाबेस में रीड करना (Pandas Dataframe)
             df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
-            st.success(f"🎉 फ़ाइल सफलतापूर्वक लोड हो गई ({len(df)} रोज़)!")
+            st.success(f"फ़ाइल लोड हो गई ({len(df)} रोज़)!")
             
-            # डेटा को P2 में ट्रांसफर करने का बटन
             if st.button("📤 वर्क/अप्रूवल पैनल (P2) में ट्रांसफर करें"):
-                # पुराने किसी भी रॉ (Temporary) डेटा को साफ़ करना
                 cursor.execute("DELETE FROM raw_store")
-                
-                # डेटाफ़्रेम को JSON में बदलकर सुरक्षित रूप से अस्थायी डेटाबेस में स्टोर करना
                 cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(df.to_dict(orient='records')),))
                 conn.commit()
-                
-                # पुराने फ़ाइल के डिलीट किए गए कॉलम्स की सेटिंग्स को रीसेट करना
                 st.session_state["deleted_cols"] = [] 
                 
-                st.success("🎉 डेटा सफलतापूर्वक अपलोड होकर **Work / Approve Panel** में प्रोसेस होने के लिए ट्रांसफर हो गया है!")
+                st.success("🎉 फ़ाइल सफलतापूर्वक अपलोड होकर **Work / Approve Panel** में प्रोसेस होने के लिए ट्रांसफर हो गई है!")
                 st.balloons()
                 st.rerun()
         except Exception as e:
@@ -360,7 +369,7 @@ elif panel == "💻 2. Work / Approve Panel":
 
         # --- Task 4: Final Database Locking Actions ---
         st.divider()
-        st.subheader("🚀 फाइनल एक्शन")
+        st.subheader("🚀 FINAL ACTION")
         if st.button("✅ डेटा अप्रूव करें और संबंधित पैनल्स में ट्रांसफर करें"):
             # Permanently append distribution segments into clean production target logs
             if not df_ug_preview.empty:
@@ -383,17 +392,17 @@ elif panel == "🎓 3. UG Panel":
     st.title("🎓 Undergraduate (UG) चेकिंग एवं त्रुटि सुधार पैनल")
     st.write("यहाँ Panel 2 से अप्रूव होकर आया हुआ शुद्ध UG डेटा प्रदर्शित हो रहा है।")
     
-    # Permanent database से केवल UG का डेटा लोड करना
+    # Load separate permanent storage datasets for distribution routing checks
     df_ug = load_permanent_data("UG")
     
     if df_ug is None or df_ug.empty:
         st.info("ℹ️ UG डेटाबेस में अभी कोई डेटा लॉक नहीं है। कृपया पहले **Panel 2 (Work / Approve Panel)** में जाकर डेटा अप्रूव करें।")
     else:
-        # आवश्यक कोर्सेस/डिग्री की सूची जिन्हें इस UG पैनल में प्रोसेस करना है
+        # Array bounds for valid undergraduate degree strings
         allowed_ug_degrees = ["ba", "bsc", "bcom", "bhsc", "12th", "bba", "bca", "btech", "llb"]
         
-        # कोर वैलिडेशन, मास्टर एमडीसी सिंक और लाइव हाइलाइटिंग टेबल को रन करना
-        # यह फ़ंक्शन गायब डेटा को नीले रंग में और गलत विषय को लाल रंग में दिखाएगा।
+        # Route array matrix directly through validation core processing rules
+        # (This handles the BA/B.Sc MDC + VOC Master Sync and cell styling)
         process_panel_validation(df_ug, "ug", allowed_ug_degrees)
 
 # =========================================================================
