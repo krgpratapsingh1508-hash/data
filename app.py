@@ -467,45 +467,24 @@ elif panel == "💻 2. Work / Approve Panel":
             if not df_pg_preview.empty: st.dataframe(df_pg_preview, height=250, use_container_width=True)
             else: st.caption("कोई डेटा PG श्रेणी में नहीं मिला।")
 
-        # --- कार्य 5: 🔒 नियम लॉक करने और फाइनल एक्शन का लॉजिक ---
+        # panel 2 के बिल्कुल अंत में मौजूद '🚀 FINAL ACTION' को इस हिस्से से बदलें
         st.divider()
         st.subheader("🚀 FINAL ACTION")
+        st.write("📈 **डेटा ट्रांसफर:** क्लीन और रीऑर्डर किए गए छात्रों के डेटा को आगे UG (P3) और PG (P4) पैनल में भेजने के लिए यह बटन दबाएँ।")
         
-        # दो अलग बटन - एक नियमों को हमेशा के लिए लॉक करने के लिए, दूसरा केवल ट्रांसफर के लिए
-        c_lock, c_approve = st.columns(2)
-        
-        with c_lock:
-            st.write("💡 **नियम सुरक्षित करें:** नीचे दिया गया बटन दबाने से आपके द्वारा चुनी गई विषयों की गाइडलाइन हमेशा के लिए सेव हो जाएगी (डेटा डिलीट होने पर भी सुरक्षित रहेगी)।")
-            if st.button("🔒 तय किए गए नियम लॉक करें (Lock Selections)"):
-                # वर्तमान में सिलेक्टेड नियमों (Session States) का बैकअप तैयार करना
-                current_rules = {
-                    "ba_minor": st.session_state.get("ba_minor_sync_ug", []),
-                    "ba_mdc": st.session_state.get("ba_mdc_sync_ug", []),
-                    "ba_voc": st.session_state.get("ba_voc_sync_ug", []),
-                    "bsc_minor": st.session_state.get("bsc_minor_sync_ug", []),
-                    "bsc_mdc": st.session_state.get("bsc_mdc_sync_ug", []),
-                    "bsc_voc": st.session_state.get("bsc_voc_sync_ug", [])
-                }
-                # डेटाबेस में राइट (Lock) करना
-                cursor.execute("INSERT OR REPLACE INTO locked_rules (course_type, rules_json) VALUES (?, ?)", ("UG_PG_MASTER", json.dumps(current_rules)))
-                conn.commit()
-                st.success("🎉 आपके चुने हुए सभी विषय और नियम डेटाबेस में लॉक कर दिए गए हैं! अब ये लिस्ट डिलीट होने पर भी गायब नहीं होंगे।")
-        
-        with c_approve:
-            st.write("📈 **डेटा ट्रांसफर:** क्लीन और रीऑर्डर किए गए छात्रों के डेटा को आगे UG और PG पैनल में भेजने के लिए यह बटन दबाएँ।")
-            if st.button("✅ डेटा अप्रूव करें और पैनल्स में ट्रांसफर करें"):
-                if not df_ug_preview.empty:
-                    ug_json_str = json.dumps(df_ug_preview[reordered_cols].to_dict(orient='records'))
-                    cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (ug_json_str, "UG"))
-                if not df_pg_preview.empty:
-                    pg_json_str = json.dumps(df_pg_preview[reordered_cols].to_dict(orient='records'))
-                    cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (pg_json_str, "PG"))
-                
-                cursor.execute("DELETE FROM raw_store")
-                conn.commit()
-                st.success("🎉 बधाई हो! डेटा सफलतापूर्वक कस्टमाइज्ड क्रम में ट्रांसफर और लॉक कर दिया गया है।")
-                st.balloons()
-                st.rerun()
+        if st.button("✅ डेटा अप्रूव करें और पैनल्स में ट्रांसफर करें"):
+            if not df_ug_preview.empty:
+                ug_json_str = json.dumps(df_ug_preview[reordered_cols].to_dict(orient='records'))
+                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (ug_json_str, "UG"))
+            if not df_pg_preview.empty:
+                pg_json_str = json.dumps(df_pg_preview[reordered_cols].to_dict(orient='records'))
+                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (pg_json_str, "PG"))
+            
+            cursor.execute("DELETE FROM raw_store")
+            conn.commit()
+            st.success("🎉 बधाई हो! डेटा सफलतापूर्वक कस्टमाइज्ड क्रम में ट्रांसफर और लॉक कर दिया गया है।")
+            st.balloons()
+            st.rerun()
 
 # =========================================================================
 # 🎓 PANEL 3: UG PANEL (Approved UG Data Verification & Subject Rules Setup)
