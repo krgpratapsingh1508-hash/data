@@ -584,7 +584,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                     continue
                     
                 # -------------------------------------------------------------------------
-                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters) - फिक्स की गई कॉलम चौड़ाई के साथ
+                # भाग 1: लाइव विषय काउंटर ग्रिड (Live Counters) - साफ़ सिंगल हेडर के साथ
                 # -------------------------------------------------------------------------
                 st.markdown("### 📈 विषयों की लाइव स्थिति (Summary Counters)")
                 deg_rule = ug_master_rules.get(deg_info['display'], {"minor":[], "mdc":[], "voc":[], "pw":[]})
@@ -613,20 +613,17 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                         return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 1px solid red;'] * len(row)
                                     return [''] * len(row)
                                 
-                                if cat["rule_key"] == "pw":
-                                    st.markdown("**Project Type**<br><span style='color:gray; font-size:12px;'>(प्रोजेक्ट प्रकार)</span>", unsafe_allow_html=True)
-                                else:
-                                    st.markdown("**Subject Name**<br><span style='color:gray; font-size:12px;'>(विषय का नाम)</span>", unsafe_allow_html=True)
+                                # 🚫 पुराना st.markdown (Subject Name/Project Type) यहाँ से पूरी तरह हटा दिया गया है।
                                 
-                                # ✨ यहाँ कॉलम की विड्थ (Width) को पिक्सल्स में फिक्स किया गया है ताकि नाम और संख्या साफ दिखे
+                                # ✨ अब केवल st.dataframe के अंदर ही साफ़ और स्पष्ट सिंगल हेडर दिखाई देगा
                                 st.dataframe(
                                     counts.style.apply(row_styler, axis=1), 
                                     hide_index=True, 
                                     use_container_width=True,
                                     height=200,
                                     column_config={
-                                        "Subject": st.column_config.TextColumn(label="विषय", width=220), # विषय के नाम के लिए पर्याप्त जगह
-                                        "Count": st.column_config.NumberColumn(label="संख्या", width=80)  # नंबर के लिए सटीक जगह
+                                        "Subject": st.column_config.TextColumn(label="विषय का नाम (Subject)", width=220), 
+                                        "Count": st.column_config.NumberColumn(label="संख्या (Count)", width=80)
                                     }
                                 )
                             else:
