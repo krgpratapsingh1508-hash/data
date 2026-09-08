@@ -125,18 +125,28 @@ def process_panel_validation(df_panel, prefix, allowed_degrees):
         
         combo_lower = combo.lower().replace(".", "").replace(" ", "")
         
-        # डिफ़ॉल्ट रूप से PW लिस्ट में 'Project Work' या 'Project' ढूंढना
-        default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower() or 'pw' in str(x).lower()]
+        # --- सख्त डिफ़ॉल्ट नियम (Strict Default Rule) ---
+        # केवल वही वैल्यू चुनना जिसका नाम बिल्कुल "Project Work" या "Project" से शुरू हो या मेल खाए
+        default_pw_selection = [x for x in opt_pw if str(x).strip().lower() in ["project work", "project", "pw"]]
         
-        # विशेष नियम: B.Sc. Biotechnology होने पर Internship को भी वैध सूची में ऑटो-शामिल करना
-        if "bsc" in combo_lower and "biotech" in combo_lower:
+        # अगर डेटाबेस में थोड़ा अलग नाम है, तो सुरक्षा के लिए सर्च फ़िल्टर लगा रहे हैं
+        if not default_pw_selection:
+            default_pw_selection = [x for x in opt_pw if 'project' in str(x).lower()]
+
+        # --- विशेष छूट नियम: B.Sc. Bio / Biotech के लिए ---
+        # यदि डिग्री bsc है और ब्रांच में 'bio' या 'biotech' शब्द आता है
+        if "bsc" in combo_lower and ("biotech" in combo_lower or "bio" in combo_lower):
+            # केवल इस कोर्स के लिए 'Internship' वाले विकल्प को भी डिफ़ॉल्ट में शामिल करें
             internship_opts = [x for x in opt_pw if 'intern' in str(x).lower()]
             default_pw_selection.extend(internship_opts)
-            default_pw_selection = list(set(default_pw_selection)) # डुप्लिकेट हटाना
+            default_pw_selection = list(set(default_pw_selection)) # डुप्लिकेट साफ़ करना
             
-        with c1: r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
-        with c2: r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
-        with c3: r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
+        with c1: 
+            r_mdc = st.multiselect(f"Valid MDC for {combo}", opt_mdc, key=f"mdc_{prefix}_{idx}")
+        with c2: 
+            r_voc = st.multiselect(f"Valid Vocational for {combo}", opt_voc, key=f"voc_{prefix}_{idx}")
+        with c3: 
+            r_pw = st.multiselect(f"Valid PW/Ap/CE for {combo}", opt_pw, default=default_pw_selection, key=f"pw_{prefix}_{idx}")
             
         rules[combo] = {
             "mdc": {str(x).strip().lower() for x in r_mdc},
