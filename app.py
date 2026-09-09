@@ -1234,7 +1234,7 @@ elif active_panel == "⚙️ 6. Admin Panel":
         _current_logo = get_app_setting("login_logo_b64")
         _current_mime = get_app_setting("login_logo_mime", "image/png")
         if _current_logo:
-            st.image(f"data:{_current_mime};base64,{_current_logo}", caption="अभी का लोगो", width=160)
+            st.image(f"data:{_current_mime};base64,{_current_logo}", caption="अभी का लोगो", width=260)
         else:
             st.info("अभी कोई लोगो नहीं है — डिफ़ॉल्ट इमोजी (🎓🔒) दिख रहा है।")
 
