@@ -163,8 +163,10 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
             if master_rules:
                 sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
                 for rule_key in sorted_keys:
-                    rk_clean = rule_key.lower().replace(".", "").replace(" ", "").strip()
-                    if rk_clean in student_deg:
+                    # 🔧 फिक्स: पूरा नाम एक साथ ढूंढने के बजाय हर word अलग-अलग ढूंढना
+                    # (जैसे "B.Com. Computer" -> "bcom" और "computer" दोनों कहीं भी मिलने चाहिए)
+                    rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
+                    if rule_words and all(w in student_deg for w in rule_words):
                         matched_key = rule_key
                         break
             
@@ -231,8 +233,9 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
             if master_rules:
                 sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
                 for rule_key in sorted_keys:
-                    rk_clean = rule_key.lower().replace(".", "").replace(" ", "").strip()
-                    if rk_clean in student_deg:
+                    # 🔧 फिक्स: पूरा नाम एक साथ ढूंढने के बजाय हर word अलग-अलग ढूंढना
+                    rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
+                    if rule_words and all(w in student_deg for w in rule_words):
                         matched_key = rule_key
                         break
             c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
@@ -841,14 +844,21 @@ elif panel == "⚙️ 6. Admin Panel":
     st.divider()
     st.subheader("🚨 डेंजर ज़ोन")
     confirm_reset = st.checkbox("मैं पूरे सिस्टम (रॉ + अप्रूव्ड दोनों डेटाबेस) को रीसेट करने की पुष्टि करता हूँ।")
+    also_delete_rules = st.checkbox("⚠️ लॉक किए गए सब्जेक्ट नियम (Minor/MDC/Voc/PW रूल्स) भी डिलीट करें (सामान्यतः इसे टिक न करें)")
     if st.button("💥 ऑल डेटाबेस रीसेट करें"):
         if confirm_reset:
             cursor.execute("DELETE FROM raw_store")
             cursor.execute("DELETE FROM perma_store")
-            cursor.execute("DELETE FROM locked_rules") # रीसेट करने पर नियमों की लॉक टेबल भी साफ़ होगी
+            # 🔧 फिक्स: locked_rules अब डिफ़ॉल्ट रूप से डिलीट नहीं होगा, ताकि लॉक किए गए सब्जेक्ट नियम
+            # नई फ़ाइल अपलोड करने के बाद भी सुरक्षित बने रहें
+            if also_delete_rules:
+                cursor.execute("DELETE FROM locked_rules")
             conn.commit()
             st.session_state["deleted_cols"] = []
-            st.success("सिस्टम पूरी तरह से रीसेट हो गया है!")
+            if also_delete_rules:
+                st.success("सिस्टम पूरी तरह से रीसेट हो गया है (डेटा + लॉक किए गए नियम दोनों हट गए)!")
+            else:
+                st.success("डेटा रीसेट हो गया है! लॉक किए गए सब्जेक्ट नियम सुरक्षित रखे गए हैं।")
             st.rerun()
         else: 
             st.error("कृपया पहले पुष्टि चेकबॉक्स पर टिक करें।")
