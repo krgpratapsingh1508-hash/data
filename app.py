@@ -566,12 +566,14 @@ elif panel == "📊 5. Dashboard / Counter Panel":
         except:
             pass
 
-        # डिग्रियों की सूची की सटीक मैपिंग
+        # डिग्रियों की सूची की सटीक मैपिंग (P3 - UG Rules Panel जैसी ही 6 डिग्री/ब्रांच संरचना)
         target_degrees = [
             {"display": "BA", "keywords": ["ba"]},
-            {"display": "B.Com.", "keywords": ["bcom"], "exclude": ["computer"]},
             {"display": "B.Sc.", "keywords": ["bsc"], "exclude": ["biotech"]},
-            {"display": "B.H.Sc.", "keywords": ["bhsc"]}
+            {"display": "B.Sc. Biotechnology", "keywords": ["bsc", "biotech"]},
+            {"display": "B.H.Sc.", "keywords": ["bhsc"]},
+            {"display": "B.Com.", "keywords": ["bcom"], "exclude": ["computer"]},
+            {"display": "B.Com. Computer", "keywords": ["bcom", "computer"]}
         ]
 
         # सभी डिग्रियों के लिए इंटरएक्टिव टैब्स
