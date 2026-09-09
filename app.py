@@ -153,7 +153,11 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         targets = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
         
         for index, row in dataframe.iterrows():
-            student_deg = str(row[deg_col]).lower().replace(".", "").replace(" ", "").strip()
+            # 🔧 फिक्स: Degree column + Branch column दोनों को मिलाकर चेक करना
+            # (Biotechnology / Commerce Computer जैसी ब्रांच अक्सर अलग Branch column में होती है, Degree column में नहीं)
+            deg_part = str(row[deg_col]) if deg_col else ""
+            br_part = str(row[br_col]) if br_col else ""
+            student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
             
             matched_key = "Default"
             if master_rules:
@@ -218,7 +222,10 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         for idx, (_, row) in enumerate(df_filtered.iterrows()):
             row_num = idx + 2 # एक्सेल डेटा रो
             
-            student_deg = str(row[deg_col]).lower().replace(".", "").replace(" ", "").strip()
+            # 🔧 फिक्स: Degree column + Branch column दोनों को मिलाकर चेक करना
+            deg_part = str(row[deg_col]) if deg_col else ""
+            br_part = str(row[br_col]) if br_col else ""
+            student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
             
             matched_key = "Default"
             if master_rules:
@@ -551,6 +558,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
         
         # ऑटो-कॉलम डिटेक्शन इंजन
         deg_col = next((c for c in master_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), None)
+        br_col = next((c for c in master_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), None)
         minor_col = next((c for c in master_df.columns if 'minor' in c.lower()), None)
         mdc_col = next((c for c in master_df.columns if 'mdc' in c.lower()), None)
         voc_col = next((c for c in master_df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
@@ -561,8 +569,8 @@ elif panel == "📊 5. Dashboard / Counter Panel":
         try:
             cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
             locked_row = cursor.fetchone()
-            if locked_row and locked_row:
-                ug_master_rules = json.loads(locked_row)
+            if locked_row and locked_row[0]:
+                ug_master_rules = json.loads(locked_row[0])
         except:
             pass
 
@@ -586,15 +594,19 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                 
                 # छात्र सूची में से इस विशिष्ट डिग्री के छात्रों को फ़िल्टर करना
                 if deg_col and deg_col in master_df.columns:
-                    def match_degree(val):
-                        v = str(val).lower().replace(".", "").replace(" ", "").strip()
+                    def match_degree(row):
+                        # 🔧 फिक्स: Degree column + Branch column दोनों को मिलाकर चेक करना
+                        # (Biotechnology / Commerce Computer जैसी ब्रांच अक्सर अलग Branch column में होती है)
+                        deg_part = str(row[deg_col]) if deg_col else ""
+                        br_part = str(row[br_col]) if br_col and br_col in master_df.columns else ""
+                        v = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
                         match = all(k in v for k in deg_info["keywords"])
                         if "exclude" in deg_info:
                             if any(ex in v for ex in deg_info["exclude"]):
                                 match = False
                         return match
                     
-                    df_deg_filtered = master_df[master_df[deg_col].apply(match_degree)].reset_index(drop=True)
+                    df_deg_filtered = master_df[master_df.apply(match_degree, axis=1)].reset_index(drop=True)
                 else:
                     df_deg_filtered = pd.DataFrame()
 
