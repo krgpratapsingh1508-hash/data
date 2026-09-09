@@ -1072,6 +1072,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                     actual_mdc = next((c for c in df_to_show.columns if 'mdc' in c.lower()), None)
                     actual_voc = next((c for c in df_to_show.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
                     actual_pw = next((c for c in df_to_show.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+                    actual_br = next((c for c in df_to_show.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), None)
                 
                     # 🔒 डेटाबेस से P3 के नियमों को लोड करना
                     current_deg_rules = {}
@@ -1132,6 +1133,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             actual_pw: 'pw'
                         }
                         for index, row in dataframe.iterrows():
+                            row_has_wrong = False
                             for col_name, rule_key in targets.items():
                                 if col_name and col_name in dataframe.columns:
                                     val = row[col_name]
@@ -1143,6 +1145,11 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                         valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
                                         if valid_set and (val_clean not in valid_set):
                                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'
+                                            row_has_wrong = True
+                            # 🟡 फिक्स: अगर इस रो में कोई भी सेल (Minor/MDC/Voc/PW) लाल (गलत) है,
+                            # तो उसी रो के Branch सेल को पीला (Yellow) कर देना
+                            if row_has_wrong and actual_br and actual_br in dataframe.columns:
+                                s_df.at[index, actual_br] = 'background-color: #fff3cd; color: #856404; font-weight: bold; border: 2px solid #ffc107;'
                         return s_df
                 
                     # full screen view table render
@@ -1151,6 +1158,62 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         height=550,
                         use_container_width=True
                     )
+
+                    # -------------------------------------------------------------------------
+                    # 🟡 ब्रांच-वाइज सही/गलत समरी (जिस ब्रांच में कोई गलत छात्र है वो पीली दिखेगी)
+                    # -------------------------------------------------------------------------
+                    if actual_br and actual_br in df_to_show.columns:
+                        st.divider()
+                        st.markdown("### 🟡 ब्रांच-वाइज सही / गलत समरी")
+                        st.caption("हर ब्रांच के सामने कुल कितने छात्र हैं, उनमें से कितने सही (✅) हैं और कितने गलत (🔴) हैं — जिस ब्रांच में कम-से-कम एक गलत छात्र है, वो रो पीली (Yellow) दिखेगी।")
+
+                        targets_for_branch_summary = {
+                            actual_minor: 'minor',
+                            actual_mdc: 'mdc',
+                            actual_voc: 'voc',
+                            actual_pw: 'pw'
+                        }
+
+                        def _row_has_wrong_subject(row):
+                            for col_name, rule_key in targets_for_branch_summary.items():
+                                if col_name and col_name in df_to_show.columns:
+                                    val = row[col_name]
+                                    if not (pd.isna(val) or str(val).strip() == ""):
+                                        val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
+                                        valid_list = current_deg_rules.get(rule_key, [])
+                                        valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
+                                        if valid_set and (val_clean not in valid_set):
+                                            return True
+                            return False
+
+                        branch_summary_rows = []
+                        for branch_val, group in df_to_show.groupby(df_to_show[actual_br].fillna("(खाली/Blank)").replace("", "(खाली/Blank)")):
+                            total_n = len(group)
+                            wrong_n = int(group.apply(_row_has_wrong_subject, axis=1).sum())
+                            correct_n = total_n - wrong_n
+                            branch_summary_rows.append({
+                                "Branch (ब्रांच)": branch_val,
+                                "कुल छात्र (Total)": total_n,
+                                "✅ सही (Correct)": correct_n,
+                                "🔴 गलत (Wrong)": wrong_n
+                            })
+
+                        branch_summary_df = pd.DataFrame(branch_summary_rows).sort_values(
+                            "कुल छात्र (Total)", ascending=False
+                        ).reset_index(drop=True)
+
+                        def branch_summary_row_styler(row):
+                            if row["🔴 गलत (Wrong)"] > 0:
+                                return ['background-color: #fff3cd; color: #856404; font-weight: bold; border: 1px solid #ffc107;'] * len(row)
+                            return ['background-color: #d4edda; color: #155724; font-weight: bold; border: 1px solid #28a745;'] * len(row)
+
+                        branch_dyn_height = min(38 * (len(branch_summary_df) + 1) + 3, 1500)
+                        st.dataframe(
+                            branch_summary_df.style.apply(branch_summary_row_styler, axis=1),
+                            hide_index=True,
+                            use_container_width=True,
+                            height=branch_dyn_height
+                        )
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
