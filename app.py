@@ -83,6 +83,77 @@ st.markdown("""
         border-top: 1px solid #e3e8ef;
         margin-top: 30px;
     }
+
+    /* ============== 🔐 लॉगिन स्क्रीन स्टाइलिंग ============== */
+    @keyframes floatIn {
+        0% { opacity: 0; transform: translateY(14px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    .login-hero {
+        text-align: center;
+        animation: floatIn 0.6s ease-out;
+        margin-bottom: 6px;
+    }
+    .login-hero .emoji-badge {
+        font-size: 46px;
+        display: inline-block;
+        animation: floatIn 0.5s ease-out;
+    }
+    .login-hero h1 {
+        font-size: 34px;
+        font-weight: 800;
+        margin: 6px 0 2px 0;
+        background: linear-gradient(270deg, #1a73e8, #6a4cff, #0f9d58, #1a73e8);
+        background-size: 600% 600%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: gradientShift 6s ease infinite;
+    }
+    .login-hero p {
+        color: #6b7688;
+        font-size: 15px;
+        margin-top: 0;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        animation: floatIn 0.7s ease-out;
+    }
+    /* लॉगिन कार्ड (st.container(border=True)) को थोड़ा प्रीमियम लुक */
+    div[data-testid="stForm"], div[data-testid="stVerticalBlockBorderWrapper"] > div {
+        border-radius: 16px !important;
+    }
+    .login-badge-row {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 10px 0 18px 0;
+    }
+    .login-badge {
+        background: linear-gradient(135deg, #eef3ff, #f3eefc);
+        border: 1px solid #dde4f5;
+        color: #4a5b8c;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 5px 12px;
+        border-radius: 20px;
+    }
+    .farewell-box {
+        text-align: center;
+        animation: floatIn 0.5s ease-out;
+        background: linear-gradient(135deg, #eafff0, #eef8ff);
+        border: 1px solid #cdeedd;
+        border-radius: 14px;
+        padding: 14px;
+        margin-bottom: 18px;
+        color: #1a6e3c;
+        font-weight: 600;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -236,22 +307,66 @@ if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 # KeyError न आए, इसलिए दोनों चीज़ें एक साथ चेक कर रहे हैं
 if not st.session_state["ok"] or "panel" not in st.session_state:
     st.session_state["ok"] = False
-    st.title("🔒 Login System")
-    panel_choice_label = st.selectbox("पैनल चुनें:", ["-- चुनें --"] + list(PANEL_KEY_TO_NAME.values()))
-    pas = st.text_input("Password:", type="password")
-    if st.button("Login"):
-        if panel_choice_label == "-- चुनें --":
-            st.error("कृपया पहले एक पैनल चुनें।")
-        else:
-            selected_key = PANEL_NAME_TO_KEY[panel_choice_label]
-            correct_pw = get_panel_password(selected_key)
-            if correct_pw is not None and pas == correct_pw:
-                st.session_state["ok"] = True
-                st.session_state["panel_key"] = selected_key
-                st.session_state["panel"] = panel_choice_label
-                st.rerun()
-            else:
-                st.error("गलत पासवर्ड! कृपया सही पासवर्ड डालें।")
+
+    left, mid, right = st.columns([1, 1.3, 1])
+    with mid:
+        # 👋 अगर अभी-अभी Logout किया है, तो एक प्यारा-सा फेयरवेल मैसेज दिखाएं
+        if st.session_state.pop("show_farewell", False):
+            st.markdown(
+                "<div class='farewell-box'>👋 सफलतापूर्वक Logout हो गए! फिर मिलते हैं 😊</div>",
+                unsafe_allow_html=True
+            )
+
+        st.markdown(
+            """
+            <div class="login-hero">
+                <div class="emoji-badge">🎓🔒</div>
+                <h1>NEP Master Data System</h1>
+                <p>अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            """
+            <div class="login-badge-row">
+                <span class="login-badge">📥 Entry</span>
+                <span class="login-badge">💻 Approve</span>
+                <span class="login-badge">🎓 UG</span>
+                <span class="login-badge">📜 PG</span>
+                <span class="login-badge">📊 Dashboard</span>
+                <span class="login-badge">⚙️ Admin</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        with st.container(border=True):
+            panel_choice_label = st.selectbox("🗂️ पैनल चुनें:", ["-- चुनें --"] + list(PANEL_KEY_TO_NAME.values()))
+            pas = st.text_input("🔑 Password:", type="password", placeholder="अपना पासवर्ड यहाँ डालें")
+            login_clicked = st.button("🚀 Login करें", use_container_width=True, type="primary")
+
+            if login_clicked:
+                if panel_choice_label == "-- चुनें --":
+                    st.error("⚠️ कृपया पहले एक पैनल चुनें।")
+                else:
+                    selected_key = PANEL_NAME_TO_KEY[panel_choice_label]
+                    correct_pw = get_panel_password(selected_key)
+                    if correct_pw is not None and pas == correct_pw:
+                        st.session_state["ok"] = True
+                        st.session_state["panel_key"] = selected_key
+                        st.session_state["panel"] = panel_choice_label
+                        st.success(f"🎉 स्वागत है! {panel_choice_label} में लॉगिन हो रहे हैं...")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error("❌ गलत पासवर्ड! कृपया सही पासवर्ड डालें।")
+
+        st.markdown(
+            "<p style='text-align:center; color:#a3adbd; font-size:12px; margin-top:10px;'>"
+            "🔐 आपका डेटा सुरक्षित है — हर पैनल का अपना अलग पासवर्ड है</p>",
+            unsafe_allow_html=True
+        )
     st.stop()
 
 # =========================================================================
@@ -259,11 +374,22 @@ if not st.session_state["ok"] or "panel" not in st.session_state:
 # =========================================================================
 panel = st.session_state["panel"]
 panel_key = st.session_state.get("panel_key")
-st.sidebar.success(f"🔑 लॉगिन पैनल: **{panel}**")
-if st.sidebar.button("🔓 Logout"):
+
+st.sidebar.markdown(
+    f"""
+    <div style="background: linear-gradient(135deg, #eef6ff, #f3fff5); border: 1px solid #d7e6f9;
+                border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;">
+        <div style="font-size:11px; color:#7a869f; font-weight:600; letter-spacing:0.5px;">लॉगिन पैनल</div>
+        <div style="font-size:15px; font-weight:700; color:#1a3c6e; margin-top:2px;">{panel}</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+if st.sidebar.button("🔓 Logout करें", use_container_width=True):
     st.session_state["ok"] = False
     st.session_state.pop("panel", None)
     st.session_state.pop("panel_key", None)
+    st.session_state["show_farewell"] = True
     st.rerun()
 
 # 👁️ सिर्फ Admin (P6 लॉगिन) के लिए: बाकी सभी पैनल्स (P1-P5) को भी देखने का विकल्प
