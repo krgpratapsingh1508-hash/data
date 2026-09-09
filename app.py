@@ -50,6 +50,58 @@ conn.commit()
 # सुनिश्चित करें कि टेबल बनने के बाद डेटाबेस में बदलाव सुरक्षित (Commit) हो जाएं
 conn.commit()
 
+# 4. पैनल-वाइज पासवर्ड + हाइड/अनहाइड स्टोरेज (6 पैनल्स के लिए)
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS panel_auth (
+        panel_key TEXT PRIMARY KEY,
+        password TEXT,
+        hidden INTEGER DEFAULT 0
+    )
+""")
+conn.commit()
+
+# डिफ़ॉल्ट पासवर्ड (सिर्फ पहली बार, जब टेबल में डेटा न हो, तभी डाले जाएंगे)
+_default_panel_passwords = {
+    "p1": "op",       # पहले Operator का पासवर्ड
+    "p2": "p2pass",
+    "p3": "ug",       # पहले Teacher_UG का पासवर्ड
+    "p4": "pg",       # पहले Teacher_PG का पासवर्ड
+    "p5": "p5pass",
+    "p6": "psv123",   # पहले Admin का पासवर्ड
+}
+for _pk, _pw in _default_panel_passwords.items():
+    cursor.execute("INSERT OR IGNORE INTO panel_auth (panel_key, password, hidden) VALUES (?, ?, 0)", (_pk, _pw))
+conn.commit()
+
+# पैनल-की और उसके डिस्प्ले नाम की मैपिंग
+PANEL_KEY_TO_NAME = {
+    "p1": "📥 1. Entry / Upload Panel",
+    "p2": "💻 2. Work / Approve Panel",
+    "p3": "🎓 3. UG Panel",
+    "p4": "📜 4. PG Panel",
+    "p5": "📊 5. Dashboard / Counter Panel",
+    "p6": "⚙️ 6. Admin Panel",
+}
+PANEL_NAME_TO_KEY = {v: k for k, v in PANEL_KEY_TO_NAME.items()}
+
+def get_panel_password(panel_key):
+    cursor.execute("SELECT password FROM panel_auth WHERE panel_key = ?", (panel_key,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+def is_panel_hidden(panel_key):
+    cursor.execute("SELECT hidden FROM panel_auth WHERE panel_key = ?", (panel_key,))
+    row = cursor.fetchone()
+    return bool(row[0]) if row else False
+
+def set_panel_password(panel_key, new_password):
+    cursor.execute("UPDATE panel_auth SET password = ? WHERE panel_key = ?", (new_password, panel_key))
+    conn.commit()
+
+def set_panel_hidden(panel_key, hidden_flag):
+    cursor.execute("UPDATE panel_auth SET hidden = ? WHERE panel_key = ?", (1 if hidden_flag else 0, panel_key))
+    conn.commit()
+
 # =========================================================================
 # परमानेंट डेटा लोड करने का फंक्शन (perma_store से UG/PG डेटा पढ़ने के लिए)
 # =========================================================================
@@ -91,42 +143,36 @@ def load_raw_data():
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 
-# --- LOGIN SYSTEM ---
+# --- LOGIN SYSTEM (पैनल-वाइज: हर पैनल का अपना पासवर्ड) ---
 if not st.session_state["ok"]:
     st.title("🔒 Login System")
-    user = st.selectbox("Username:", ["-- चुनें --", "Admin", "Operator", "Teacher_UG", "Teacher_PG"])
+    panel_choice_label = st.selectbox("पैनल चुनें:", ["-- चुनें --"] + list(PANEL_KEY_TO_NAME.values()))
     pas = st.text_input("Password:", type="password")
     if st.button("Login"):
-        if (user == "Admin" and pas == "psv123") or (user == "Operator" and pas == "op") or (user == "Teacher_UG" and pas == "ug") or (user == "Teacher_PG" and pas == "pg"):
-            st.session_state["ok"] = True
-            st.session_state["user"] = user
-            st.rerun()
-        else: 
-            st.error("गलत पासवर्ड! कृपया सही पासवर्ड डालें।")
+        if panel_choice_label == "-- चुनें --":
+            st.error("कृपया पहले एक पैनल चुनें।")
+        else:
+            selected_key = PANEL_NAME_TO_KEY[panel_choice_label]
+            correct_pw = get_panel_password(selected_key)
+            if correct_pw is not None and pas == correct_pw:
+                st.session_state["ok"] = True
+                st.session_state["panel_key"] = selected_key
+                st.session_state["panel"] = panel_choice_label
+                st.rerun()
+            else:
+                st.error("गलत पासवर्ड! कृपया सही पासवर्ड डालें।")
     st.stop()
 
 # =========================================================================
-# 🔄 6 रोल-बेस्ड पैनल्स का नेविगेशन (Updated to 6 Panels Structure)
+# 🔄 लॉगिन किए गए पैनल को लोड करना (अब हर लॉगिन सिर्फ एक ही पैनल खोलता है)
 # =========================================================================
-u = st.session_state["user"]
-
-if u == "Operator":
-    p_opts = ["📥 1. Entry / Upload Panel"]
-elif u == "Teacher_UG":
-    p_opts = ["🎓 3. UG Panel"]
-elif u == "Teacher_PG":
-    p_opts = ["📜 4. PG Panel"]
-else:
-    p_opts = [
-        "📥 1. Entry / Upload Panel", 
-        "💻 2. Work / Approve Panel", 
-        "🎓 3. UG Panel", 
-        "📜 4. PG Panel", 
-        "📊 5. Dashboard / Counter Panel", # नया काउंटर पैनल
-        "⚙️ 6. Admin Panel"                 # एडमिन अब पैनल 6 बन गया है
-    ]
-
-panel = st.sidebar.radio("पैनल चुनें:", p_opts)
+panel = st.session_state["panel"]
+st.sidebar.success(f"🔑 लॉगिन पैनल: **{panel}**")
+if st.sidebar.button("🔓 Logout"):
+    st.session_state["ok"] = False
+    st.session_state.pop("panel", None)
+    st.session_state.pop("panel_key", None)
+    st.rerun()
 
 def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=None):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
@@ -285,6 +331,10 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
 # =========================================================================
 if panel == "📥 1. Entry / Upload Panel":
     st.title("📥 Entry Panel - डेटा सुरक्षित अपलोड")
+    if is_panel_hidden("p1"):
+        st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
+        st.dataframe(pd.DataFrame(), use_container_width=True)
+        st.stop()
     st.write("यहाँ अपनी मुख्य एक्सेल/CSV फ़ाइल अपलोड करें। यह डेटा सीधे समीक्षा और क्लीनिंग के लिए **Work / Approve Panel (P2)** में ट्रांसफर हो जाएगा।")
     
     # एक्सेल या सीएसवी फ़ाइल अपलोड करने का विकल्प
@@ -318,6 +368,10 @@ if panel == "📥 1. Entry / Upload Panel":
 # =========================================================================
 elif panel == "💻 2. Work / Approve Panel":
     st.title("💻 Work / Approve Panel - डेटा प्रोसेसिंग एवं अप्रूवल")
+    if is_panel_hidden("p2"):
+        st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
+        st.dataframe(pd.DataFrame(), use_container_width=True)
+        st.stop()
     
     # Panel 1 से ट्रांसफर होकर आया हुआ Staging (Raw) डेटा लोड करना
     raw_df = load_raw_data()
@@ -440,6 +494,10 @@ elif panel == "💻 2. Work / Approve Panel":
 
 elif panel == "🎓 3. UG Panel":
     st.title("🎓 Undergraduate (UG) चेकिंग एवं त्रुटि सुधार पैनल")
+    if is_panel_hidden("p3"):
+        st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
+        st.dataframe(pd.DataFrame(), use_container_width=True)
+        st.stop()
     df_ug = load_permanent_data("UG")
     
     if df_ug is None or df_ug.empty: 
@@ -528,6 +586,10 @@ elif panel == "🎓 3. UG Panel":
 # =========================================================================
 elif panel == "📜 4. PG Panel":
     st.title("📜 Postgraduate (PG) चेकिंग एवं त्रुटि सुधार पैनल")
+    if is_panel_hidden("p4"):
+        st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
+        st.dataframe(pd.DataFrame(), use_container_width=True)
+        st.stop()
     df_pg = load_permanent_data("PG")
     if df_pg is None or df_pg.empty: 
         st.info("ℹ️ PG डेटाबेस खाली है।")
@@ -540,6 +602,10 @@ elif panel == "📜 4. PG Panel":
 elif panel == "📊 5. Dashboard / Counter Panel":
     # शीर्षक का फ़ॉन्ट छोटा किया गया है
     st.markdown("### 📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
+    if is_panel_hidden("p5"):
+        st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
+        st.dataframe(pd.DataFrame(), use_container_width=True)
+        st.stop()
     st.write("नीचे दिए गए टैब पर क्लिक करें, फिर बटन चुनकर 'विषय समरी' या 'छात्रों की फुल लिस्ट' को पूरी स्क्रीन पर देखें।")
     
     # 🛠️ फिक्स: UG और PG दोनों का डेटा लोड करना और लिस्ट बनाना
@@ -688,11 +754,14 @@ elif panel == "📊 5. Dashboard / Counter Panel":
                                 st.markdown("**Subject Distribution Summary**<br><span style='color:gray; font-size:12px;'>(विषय आवंटन की समरी सूची)</span>", unsafe_allow_html=True)
                             
                             # फुल स्क्रीन चौड़ाई (Width) के साथ काउंटर तालिका रेंडर करना
+                            # 🔧 फिक्स: टेबल की ऊंचाई अब रोज़ की संख्या के हिसाब से खुद-ब-खुद सेट होगी,
+                            # ताकि पूरी लिस्ट एक बार में दिखे और स्क्रॉल न करना पड़े
+                            dynamic_height = min(38 * (len(counts) + 1) + 3, 2000)
                             st.dataframe(
                                 counts.style.apply(row_styler, axis=1), 
                                 hide_index=True, 
                                 use_container_width=True,
-                                height=350,
+                                height=dynamic_height,
                                 column_config={
                                     "Subject": st.column_config.TextColumn(label=current_cat["label"], width=600), 
                                     "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150)
@@ -811,7 +880,54 @@ elif panel == "📊 5. Dashboard / Counter Panel":
 # =========================================================================
 elif panel == "⚙️ 6. Admin Panel":
     st.title("⚙️ Admin Panel - मास्टर डेटाबेस कंट्रोल")
-    
+
+    # =====================================================================
+    # 🔑 पैनल पासवर्ड अपडेट सिस्टम (6 पैनल्स)
+    # =====================================================================
+    st.subheader("🔑 पैनल पासवर्ड अपडेट करें")
+    st.caption("यहाँ से आप किसी भी पैनल (P1-P6) का पासवर्ड बदल सकते हैं। बदलने के बाद उस पैनल में लॉगिन के लिए नया पासवर्ड इस्तेमाल होगा।")
+
+    pw_cols = st.columns(3)
+    new_pw_inputs = {}
+    for i, (pk, pname) in enumerate(PANEL_KEY_TO_NAME.items()):
+        with pw_cols[i % 3]:
+            new_pw_inputs[pk] = st.text_input(f"{pname} का नया पासवर्ड", value="", type="password", key=f"pw_input_{pk}", placeholder="खाली छोड़ें तो नहीं बदलेगा")
+
+    if st.button("🔐 पासवर्ड सेव करें", key="save_panel_passwords_btn"):
+        updated_any = False
+        for pk, new_pw in new_pw_inputs.items():
+            if new_pw.strip():
+                set_panel_password(pk, new_pw.strip())
+                updated_any = True
+        if updated_any:
+            st.success("🎉 चुने गए पैनल्स के पासवर्ड सफलतापूर्वक अपडेट हो गए हैं!")
+        else:
+            st.info("कोई नया पासवर्ड नहीं डाला गया, कुछ भी नहीं बदला।")
+
+    st.divider()
+
+    # =====================================================================
+    # 👁️ पैनल हाइड / अनहाइड सिस्टम (P1 से P5 तक)
+    # =====================================================================
+    st.subheader("👁️ पैनल Hide / Unhide करें (P1 से P5)")
+    st.caption("जिस पैनल को Hide करेंगे, उसमें सही पासवर्ड डालने पर भी डेटा नहीं दिखेगा (सिर्फ पैनल का ढांचा दिखेगा)। Unhide करने पर डेटा फिर से दिखने लगेगा।")
+
+    hide_cols = st.columns(5)
+    hide_keys = ["p1", "p2", "p3", "p4", "p5"]
+    new_hidden_state = {}
+    for i, pk in enumerate(hide_keys):
+        with hide_cols[i]:
+            current_hidden = is_panel_hidden(pk)
+            new_hidden_state[pk] = st.checkbox(f"🙈 {PANEL_KEY_TO_NAME[pk]} Hide करें", value=current_hidden, key=f"hide_chk_{pk}")
+
+    if st.button("💾 Hide/Unhide सेटिंग सेव करें", key="save_hide_settings_btn"):
+        for pk, hide_flag in new_hidden_state.items():
+            set_panel_hidden(pk, hide_flag)
+        st.success("🎉 Hide/Unhide सेटिंग सफलतापूर्वक सेव हो गई है!")
+        st.rerun()
+
+    st.divider()
+
     df_ug_download = load_permanent_data("UG")
     df_pg_download = load_permanent_data("PG")
     
