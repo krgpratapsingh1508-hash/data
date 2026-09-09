@@ -144,7 +144,10 @@ if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 
 # --- LOGIN SYSTEM (पैनल-वाइज: हर पैनल का अपना पासवर्ड) ---
-if not st.session_state["ok"]:
+# 🔧 फिक्स: पुराने सेशन (जिसमें "ok"=True था लेकिन "panel" key नहीं थी) की वजह से
+# KeyError न आए, इसलिए दोनों चीज़ें एक साथ चेक कर रहे हैं
+if not st.session_state["ok"] or "panel" not in st.session_state:
+    st.session_state["ok"] = False
     st.title("🔒 Login System")
     panel_choice_label = st.selectbox("पैनल चुनें:", ["-- चुनें --"] + list(PANEL_KEY_TO_NAME.values()))
     pas = st.text_input("Password:", type="password")
