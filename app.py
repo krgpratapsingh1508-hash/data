@@ -3,7 +3,95 @@ import pandas as pd
 import sqlite3
 import json
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="NEP Master Data System", page_icon="🎓", layout="wide")
+
+# =========================================================================
+# 🎨 प्रोफेशनल UI स्टाइलिंग (पूरे ऐप में कस्टम CSS)
+# =========================================================================
+st.markdown("""
+<style>
+    /* मुख्य कंटेनर पैडिंग */
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 3rem;
+    }
+    /* हैडिंग्स */
+    h1, h2, h3 {
+        font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+        letter-spacing: -0.3px;
+    }
+    h1 { color: #1a3c6e; }
+    /* बटन */
+    div.stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        border: 1px solid #d0d7e2;
+        transition: all 0.15s ease-in-out;
+    }
+    div.stButton > button:hover {
+        border-color: #1a73e8;
+        color: #1a73e8;
+    }
+    div.stButton > button[kind="primary"] {
+        background-color: #1a73e8;
+    }
+    /* डाउनलोड बटन */
+    div.stDownloadButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        background-color: #0f9d58;
+        color: white;
+        border: none;
+    }
+    div.stDownloadButton > button:hover {
+        background-color: #0c8043;
+        color: white;
+    }
+    /* साइडबार */
+    section[data-testid="stSidebar"] {
+        background-color: #f6f8fb;
+        border-right: 1px solid #e3e8ef;
+    }
+    /* डेटाफ़्रेम / टेबल कार्ड जैसा दिखे */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #e3e8ef;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    /* मेट्रिक कार्ड्स */
+    div[data-testid="stMetric"] {
+        background-color: #f8fafc;
+        border: 1px solid #e3e8ef;
+        border-radius: 10px;
+        padding: 12px 16px;
+    }
+    /* एक्सपैंडर */
+    div[data-testid="stExpander"] {
+        border: 1px solid #e3e8ef;
+        border-radius: 10px;
+    }
+    /* टैब्स */
+    button[data-baseweb="tab"] {
+        font-weight: 600;
+    }
+    /* फुटर क्रेडिट */
+    .app-footer {
+        text-align: center;
+        color: #8a94a6;
+        font-size: 12.5px;
+        padding: 18px 0 4px 0;
+        border-top: 1px solid #e3e8ef;
+        margin-top: 30px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+def render_footer():
+    st.markdown(
+        "<div class='app-footer'>🛠️ Professionally Developed &amp; Maintained &nbsp;|&nbsp; "
+        "NEP Master Data System © 2026</div>",
+        unsafe_allow_html=True
+    )
 
 # =========================================================================
 # डेटाबेस सेटअप - टेबल्स संरचना (Raw, Permanent और Rules Lock)
@@ -167,15 +255,94 @@ if not st.session_state["ok"] or "panel" not in st.session_state:
     st.stop()
 
 # =========================================================================
-# 🔄 लॉगिन किए गए पैनल को लोड करना (अब हर लॉगिन सिर्फ एक ही पैनल खोलता है)
+# 🔄 लॉगिन किए गए पैनल को लोड करना
 # =========================================================================
 panel = st.session_state["panel"]
+panel_key = st.session_state.get("panel_key")
 st.sidebar.success(f"🔑 लॉगिन पैनल: **{panel}**")
 if st.sidebar.button("🔓 Logout"):
     st.session_state["ok"] = False
     st.session_state.pop("panel", None)
     st.session_state.pop("panel_key", None)
     st.rerun()
+
+# 👁️ सिर्फ Admin (P6 लॉगिन) के लिए: बाकी सभी पैनल्स (P1-P5) को भी देखने का विकल्प
+is_admin_session = (panel_key == "p6")
+if is_admin_session:
+    st.sidebar.divider()
+    admin_view_choice = st.sidebar.selectbox(
+        "👁️ पैनल देखें (Admin View):",
+        ["⚙️ 6. Admin Panel"] + [PANEL_KEY_TO_NAME[k] for k in ["p1", "p2", "p3", "p4", "p5"]],
+        key="admin_view_selector"
+    )
+    active_panel = admin_view_choice
+else:
+    active_panel = panel
+
+import io
+from openpyxl.styles import PatternFill, Border, Side
+
+def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, mdc_col_found, voc_col_found, pw_col_found, master_rules=None, sheet_name="Verified_Data"):
+    """
+    🔧 रीयूज़ेबल फ़ंक्शन: किसी भी DataFrame को रंगीन (🔴 गलत / 🔵 खाली) Excel bytes में बदलता है।
+    Panel 3/4 और Admin Panel — दोनों जगह इसी फ़ंक्शन का इस्तेमाल होता है, ताकि रंग-कोडिंग हमेशा एक जैसी रहे।
+    """
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_filtered.to_excel(writer, index=False, sheet_name=sheet_name)
+        workbook = writer.book
+        worksheet = writer.sheets[sheet_name]
+
+        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid")  # ब्लैंक = नीला
+        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")    # गलत = लाल
+        thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
+                             top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
+
+        targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
+
+        for idx, (_, row) in enumerate(df_filtered.iterrows()):
+            row_num = idx + 2  # एक्सेल डेटा रो
+
+            deg_part = str(row[deg_col]) if deg_col and deg_col in df_filtered.columns else ""
+            br_part = str(row[br_col]) if br_col and br_col in df_filtered.columns else ""
+            student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
+
+            matched_key = "Default"
+            if master_rules:
+                sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
+                for rule_key in sorted_keys:
+                    rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
+                    if rule_words and all(w in student_deg for w in rule_words):
+                        matched_key = rule_key
+                        break
+            c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
+
+            for col_idx, col_name in enumerate(df_filtered.columns, start=1):
+                cell = worksheet.cell(row=row_num, column=col_idx)
+                val = row[col_name]
+
+                if col_name == br_col:
+                    if pd.isna(val) or str(val).strip() == "":
+                        cell.fill = blue_fill
+                        cell.border = thin_border
+                    continue
+
+                if col_name in targets_xl:
+                    rule_key = targets_xl[col_name]
+
+                    if pd.isna(val) or str(val).strip() == "":
+                        cell.fill = blue_fill
+                        cell.border = thin_border
+                    else:
+                        val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
+                        valid_list = c_rule.get(rule_key, [])
+                        valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
+
+                        if valid_set and (val_clean not in valid_set):
+                            cell.fill = red_fill
+                            cell.border = thin_border
+
+    return output.getvalue()
 
 def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=None):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
@@ -251,76 +418,11 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
     df_filtered.index = range(1, len(df_filtered) + 1)
     st.dataframe(df_filtered.style.apply(cell_styler, axis=None), height=500, use_container_width=True)
 
-    # --- 🚨 📥 नया मास्टर फिक्स रंगीन एक्सेल डाउनलोड इंजन 🚨 ---
-    import io
-    from openpyxl.styles import PatternFill, Border, Side
-    
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_filtered.to_excel(writer, index=False, sheet_name='Verified_Data')
-        workbook = writer.book
-        worksheet = writer.sheets['Verified_Data']
-        
-        # साफ़ और गहरे ठोस कलर्स (एक्सेल कम्पैटिबल)
-        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid") # ब्लैंक = नीला
-        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")   # गलत = लाल
-        thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
-                             top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
-        
-        targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
-        
-        # एक-एक रो को बिना किसी एरर के रीड करने के लिए लूप
-        for idx, (_, row) in enumerate(df_filtered.iterrows()):
-            row_num = idx + 2 # एक्सेल डेटा रो
-            
-            # 🔧 फिक्स: Degree column + Branch column दोनों को मिलाकर चेक करना
-            deg_part = str(row[deg_col]) if deg_col else ""
-            br_part = str(row[br_col]) if br_col else ""
-            student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
-            
-            matched_key = "Default"
-            if master_rules:
-                sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
-                for rule_key in sorted_keys:
-                    # 🔧 फिक्स: पूरा नाम एक साथ ढूंढने के बजाय हर word अलग-अलग ढूंढना
-                    rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
-                    if rule_words and all(w in student_deg for w in rule_words):
-                        matched_key = rule_key
-                        break
-            c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
-            
-            for col_idx, col_name in enumerate(df_filtered.columns, start=1):
-                cell = worksheet.cell(row=row_num, column=col_idx)
-                val = row[col_name]
-                
-                # ब्रांच/स्ट्रीम कॉलम अगर खाली है तो नीला करें
-                if col_name == br_col:
-                    if pd.isna(val) or str(val).strip() == "":
-                        cell.fill = blue_fill
-                        cell.border = thin_border
-                    continue
-                
-                # माइनर, एमडीसी, वोकेशनल, प्रोजेक्ट कॉलम्स की सटीक कलर कोडिंग
-                if col_name in targets_xl:
-                    rule_key = targets_xl[col_name]
-                    
-                    # 🔵 कंडीशन 1: अगर सेल पूरी तरह से खाली (Blank) है तो नीला करें
-                    if pd.isna(val) or str(val).strip() == "":
-                        cell.fill = blue_fill
-                        cell.border = thin_border
-                    
-                    # 🔴 कंडीशन 2: अगर सेल में विषय भरा है, लेकिन वह P3 के वैध विषयों में नहीं है तो लाल करें
-                    else:
-                        val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
-                        valid_list = c_rule.get(rule_key, [])
-                        valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
-                        
-                        # यदि नियम मौजूद हैं और छात्र का विषय उसमें मैच नहीं हो रहा है
-                        if valid_set and (val_clean not in valid_set):
-                            cell.fill = red_fill
-                            cell.border = thin_border
-
-    processed_data = output.getvalue()
+    # --- 🚨 📥 रंगीन एक्सेल डाउनलोड (अब शेयर्ड फ़ंक्शन का इस्तेमाल कर रहा है) 🚨 ---
+    processed_data = generate_colored_excel_bytes(
+        df_filtered, deg_col, br_col, minor_col_found, mdc_col_found, voc_col_found, pw_col_found,
+        master_rules=master_rules, sheet_name="Verified_Data"
+    )
     st.download_button(
         label=f"📥 रंगीन (🔴/🔵) {prefix.upper()} डेटा एक्सेल डाउनलोड करें",
         data=processed_data,
@@ -332,9 +434,9 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
 # =========================================================================
-if panel == "📥 1. Entry / Upload Panel":
+if active_panel == "📥 1. Entry / Upload Panel":
     st.title("📥 Entry Panel - डेटा सुरक्षित अपलोड")
-    if is_panel_hidden("p1"):
+    if is_panel_hidden("p1") and not is_admin_session:
         st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
         st.dataframe(pd.DataFrame(), use_container_width=True)
         st.stop()
@@ -369,9 +471,9 @@ if panel == "📥 1. Entry / Upload Panel":
 # =========================================================================
 # 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम मूव + लाइव स्प्लिट + डेटाबेस रूटिंग)
 # =========================================================================
-elif panel == "💻 2. Work / Approve Panel":
+elif active_panel == "💻 2. Work / Approve Panel":
     st.title("💻 Work / Approve Panel - डेटा प्रोसेसिंग एवं अप्रूवल")
-    if is_panel_hidden("p2"):
+    if is_panel_hidden("p2") and not is_admin_session:
         st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
         st.dataframe(pd.DataFrame(), use_container_width=True)
         st.stop()
@@ -495,9 +597,9 @@ elif panel == "💻 2. Work / Approve Panel":
             st.balloons()
             st.rerun()
 
-elif panel == "🎓 3. UG Panel":
+elif active_panel == "🎓 3. UG Panel":
     st.title("🎓 Undergraduate (UG) चेकिंग एवं त्रुटि सुधार पैनल")
-    if is_panel_hidden("p3"):
+    if is_panel_hidden("p3") and not is_admin_session:
         st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
         st.dataframe(pd.DataFrame(), use_container_width=True)
         st.stop()
@@ -587,9 +689,9 @@ elif panel == "🎓 3. UG Panel":
 # =========================================================================
 # 📜 PANEL 4: PG PANEL
 # =========================================================================
-elif panel == "📜 4. PG Panel":
+elif active_panel == "📜 4. PG Panel":
     st.title("📜 Postgraduate (PG) चेकिंग एवं त्रुटि सुधार पैनल")
-    if is_panel_hidden("p4"):
+    if is_panel_hidden("p4") and not is_admin_session:
         st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
         st.dataframe(pd.DataFrame(), use_container_width=True)
         st.stop()
@@ -602,10 +704,10 @@ elif panel == "📜 4. PG Panel":
 # =========================================================================
 # 📊 PANEL 5: DASHBOARD / COUNTER PANEL (फुल स्क्रीन व्यूअर - भाग 1 और भाग 2 आपस में हाइड/शो)
 # =========================================================================
-elif panel == "📊 5. Dashboard / Counter Panel":
+elif active_panel == "📊 5. Dashboard / Counter Panel":
     # शीर्षक का फ़ॉन्ट छोटा किया गया है
     st.markdown("### 📊 Dashboard - डिग्री-वाइज लाइव काउंटर एवं विस्तृत डेटा समीक्षा")
-    if is_panel_hidden("p5"):
+    if is_panel_hidden("p5") and not is_admin_session:
         st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
         st.dataframe(pd.DataFrame(), use_container_width=True)
         st.stop()
@@ -881,7 +983,7 @@ elif panel == "📊 5. Dashboard / Counter Panel":
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
 # =========================================================================
-elif panel == "⚙️ 6. Admin Panel":
+elif active_panel == "⚙️ 6. Admin Panel":
     st.title("⚙️ Admin Panel - मास्टर डेटाबेस कंट्रोल")
 
     # =====================================================================
@@ -933,17 +1035,50 @@ elif panel == "⚙️ 6. Admin Panel":
 
     df_ug_download = load_permanent_data("UG")
     df_pg_download = load_permanent_data("PG")
-    
+
+    # 🔒 UG मास्टर रूल्स लोड करना ताकि Admin की रंगीन डाउनलोड भी बाकी पैनल्स जैसी सही हो
+    _admin_ug_rules = {}
+    try:
+        cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
+        _locked_row = cursor.fetchone()
+        if _locked_row and _locked_row[0]:
+            _admin_ug_rules = json.loads(_locked_row[0])
+    except Exception:
+        pass
+
+    def _detect_cols(df):
+        deg_c = next((c for c in df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df.columns[0] if len(df.columns) else None)
+        br_c = next((c for c in df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), None)
+        min_c = next((c for c in df.columns if 'minor' in c.lower()), None)
+        mdc_c = next((c for c in df.columns if 'mdc' in c.lower()), None)
+        voc_c = next((c for c in df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
+        pw_c = next((c for c in df.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+        return deg_c, br_c, min_c, mdc_c, voc_c, pw_c
+
     st.subheader("📥 डेटाबेस बैकअप डाउनलोड करें")
+    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच)")
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("#### 🎓 UG डेटा बैकअप")
         if df_ug_download is not None and not df_ug_download.empty:
             st.download_button(
-                label="📥 UG डेटा CSV डाउनलोड करें", 
+                label="📥 UG डेटा CSV डाउनलोड करें (सादा)", 
                 data=df_ug_download.to_csv(index=False).encode('utf-8'), 
                 file_name="Approved_UG_Data_Backup.csv", 
-                mime="text/csv"
+                mime="text/csv",
+                key="admin_ug_csv_dl"
+            )
+            deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_ug_download)
+            ug_colored = generate_colored_excel_bytes(
+                df_ug_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
+                master_rules=_admin_ug_rules, sheet_name="UG_Backup"
+            )
+            st.download_button(
+                label="📥 रंगीन (🔴/🔵) UG डेटा एक्सेल डाउनलोड करें",
+                data=ug_colored,
+                file_name="Approved_UG_Colored_Backup.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="admin_ug_colored_dl"
             )
         else: 
             st.info("UG डेटाबेस खाली है।")
@@ -952,10 +1087,24 @@ elif panel == "⚙️ 6. Admin Panel":
         st.markdown("#### 📜 PG डेटा बैकअप")
         if df_pg_download is not None and not df_pg_download.empty:
             st.download_button(
-                label="📥 PG डेटा CSV डाउनलोड करें", 
+                label="📥 PG डेटा CSV डाउनलोड करें (सादा)", 
                 data=df_pg_download.to_csv(index=False).encode('utf-8'), 
                 file_name="Approved_PG_Data_Backup.csv", 
-                mime="text/csv"
+                mime="text/csv",
+                key="admin_pg_csv_dl"
+            )
+            deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_pg_download)
+            pg_colored = generate_colored_excel_bytes(
+                df_pg_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
+                master_rules=None, sheet_name="PG_Backup"
+            )
+            st.download_button(
+                label="📥 रंगीन (🔵) PG डेटा एक्सेल डाउनलोड करें",
+                data=pg_colored,
+                file_name="Approved_PG_Colored_Backup.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="admin_pg_colored_dl",
+                help="PG के लिए फिलहाल कोई मास्टर सब्जेक्ट नियम सेट नहीं है, इसलिए सिर्फ खाली सेल नीले दिखेंगे।"
             )
         else: 
             st.info("PG डेटाबेस खाली है।")
@@ -981,3 +1130,8 @@ elif panel == "⚙️ 6. Admin Panel":
             st.rerun()
         else: 
             st.error("कृपया पहले पुष्टि चेकबॉक्स पर टिक करें।")
+
+# =========================================================================
+# 🏁 फुटर (हर पेज के नीचे प्रोफेशनल क्रेडिट लाइन)
+# =========================================================================
+render_footer()
