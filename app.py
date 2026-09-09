@@ -104,6 +104,16 @@ st.markdown("""
         display: inline-block;
         animation: floatIn 0.5s ease-out;
     }
+    .login-hero .login-logo-img {
+        max-height: 92px;
+        max-width: 260px;
+        border-radius: 14px;
+        box-shadow: 0 6px 20px rgba(26, 60, 110, 0.18);
+        animation: floatIn 0.5s ease-out;
+        object-fit: contain;
+        background: #ffffff;
+        padding: 6px;
+    }
     .login-hero h1 {
         font-size: 34px;
         font-weight: 800;
@@ -261,6 +271,31 @@ def set_panel_hidden(panel_key, hidden_flag):
     cursor.execute("UPDATE panel_auth SET hidden = ? WHERE panel_key = ?", (1 if hidden_flag else 0, panel_key))
     conn.commit()
 
+# 5. ऐप सेटिंग्स स्टोरेज (Login टाइटल + लोगो — सिर्फ Admin बदल सकता है)
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS app_settings (
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT
+    )
+""")
+conn.commit()
+
+def get_app_setting(key, default=None):
+    cursor.execute("SELECT setting_value FROM app_settings WHERE setting_key = ?", (key,))
+    row = cursor.fetchone()
+    return row[0] if row and row[0] is not None else default
+
+def set_app_setting(key, value):
+    cursor.execute("""
+        INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+        ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+    """, (key, value))
+    conn.commit()
+
+def delete_app_setting(key):
+    cursor.execute("DELETE FROM app_settings WHERE setting_key = ?", (key,))
+    conn.commit()
+
 # =========================================================================
 # परमानेंट डेटा लोड करने का फंक्शन (perma_store से UG/PG डेटा पढ़ने के लिए)
 # =========================================================================
@@ -317,12 +352,23 @@ if not st.session_state["ok"] or "panel" not in st.session_state:
                 unsafe_allow_html=True
             )
 
+        # 🎨 Admin द्वारा सेट किया गया टाइटल और लोगो (डिफ़ॉल्ट: इमोजी + "NEP Master Data System")
+        _login_title = get_app_setting("login_title", "NEP Master Data System")
+        _login_subtitle = get_app_setting("login_subtitle", "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
+        _logo_b64 = get_app_setting("login_logo_b64")
+        _logo_mime = get_app_setting("login_logo_mime", "image/png")
+
+        if _logo_b64:
+            badge_html = f'<img src="data:{_logo_mime};base64,{_logo_b64}" class="login-logo-img" />'
+        else:
+            badge_html = '<div class="emoji-badge">🎓🔒</div>'
+
         st.markdown(
-            """
+            f"""
             <div class="login-hero">
-                <div class="emoji-badge">🎓🔒</div>
-                <h1>NEP Master Data System</h1>
-                <p>अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें</p>
+                {badge_html}
+                <h1>{_login_title}</h1>
+                <p>{_login_subtitle}</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1111,6 +1157,55 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
 # =========================================================================
 elif active_panel == "⚙️ 6. Admin Panel":
     st.title("⚙️ Admin Panel - मास्टर डेटाबेस कंट्रोल")
+
+    # =====================================================================
+    # 🎨 लॉगिन स्क्रीन कस्टमाइज़ेशन (टाइटल + लोगो अपलोड)
+    # =====================================================================
+    st.subheader("🎨 लॉगिन स्क्रीन कस्टमाइज़ करें")
+    st.caption("यहाँ से आप लॉगिन पेज पर दिखने वाला टाइटल बदल सकते हैं, और इमोजी की जगह अपना खुद का लोगो अपलोड कर सकते हैं।")
+
+    logo_col, title_col = st.columns([1, 1.4])
+
+    with logo_col:
+        st.markdown("**🖼️ लोगो अपलोड करें**")
+        _current_logo = get_app_setting("login_logo_b64")
+        _current_mime = get_app_setting("login_logo_mime", "image/png")
+        if _current_logo:
+            st.image(f"data:{_current_mime};base64,{_current_logo}", caption="अभी का लोगो", width=160)
+        else:
+            st.info("अभी कोई लोगो नहीं है — डिफ़ॉल्ट इमोजी (🎓🔒) दिख रहा है।")
+
+        uploaded_logo = st.file_uploader("नया लोगो चुनें (PNG/JPG)", type=["png", "jpg", "jpeg", "webp"], key="logo_uploader")
+        lc1, lc2 = st.columns(2)
+        with lc1:
+            if st.button("💾 लोगो सेव करें", use_container_width=True, disabled=(uploaded_logo is None)):
+                import base64 as _b64
+                logo_bytes = uploaded_logo.getvalue()
+                encoded = _b64.b64encode(logo_bytes).decode("utf-8")
+                set_app_setting("login_logo_b64", encoded)
+                set_app_setting("login_logo_mime", uploaded_logo.type or "image/png")
+                st.success("🎉 लोगो सफलतापूर्वक सेव हो गया!")
+                st.rerun()
+        with lc2:
+            if st.button("🗑️ लोगो हटाएं (इमोजी दिखाएं)", use_container_width=True, disabled=(not _current_logo)):
+                delete_app_setting("login_logo_b64")
+                delete_app_setting("login_logo_mime")
+                st.success("लोगो हटा दिया गया, अब डिफ़ॉल्ट इमोजी दिखेगा।")
+                st.rerun()
+
+    with title_col:
+        st.markdown("**✏️ टाइटल और सबटाइटल एडिट करें**")
+        _cur_title = get_app_setting("login_title", "NEP Master Data System")
+        _cur_subtitle = get_app_setting("login_subtitle", "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
+        new_title_input = st.text_input("लॉगिन पेज का टाइटल", value=_cur_title, key="login_title_input")
+        new_subtitle_input = st.text_input("लॉगिन पेज का सबटाइटल", value=_cur_subtitle, key="login_subtitle_input")
+        if st.button("💾 टाइटल सेव करें", key="save_login_title_btn"):
+            set_app_setting("login_title", new_title_input.strip() or "NEP Master Data System")
+            set_app_setting("login_subtitle", new_subtitle_input.strip() or "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
+            st.success("🎉 टाइटल सफलतापूर्वक अपडेट हो गया!")
+            st.rerun()
+
+    st.divider()
 
     # =====================================================================
     # 🔑 पैनल पासवर्ड अपडेट सिस्टम (6 पैनल्स)
