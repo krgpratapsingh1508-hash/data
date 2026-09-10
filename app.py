@@ -98,6 +98,8 @@ st.markdown("""
         text-align: center;
         animation: floatIn 0.6s ease-out;
         margin-bottom: 6px;
+        margin-top: 38px;
+        padding-top: 10px;
     }
     .login-hero .emoji-badge {
         font-size: 46px;
@@ -105,8 +107,6 @@ st.markdown("""
         animation: floatIn 0.5s ease-out;
     }
     .login-hero .login-logo-img {
-        max-height: 92px;
-        max-width: 260px;
         border-radius: 14px;
         box-shadow: 0 6px 20px rgba(26, 60, 110, 0.18);
         animation: floatIn 0.5s ease-out;
@@ -357,9 +357,15 @@ if not st.session_state["ok"] or "panel" not in st.session_state:
         _login_subtitle = get_app_setting("login_subtitle", "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
         _logo_b64 = get_app_setting("login_logo_b64")
         _logo_mime = get_app_setting("login_logo_mime", "image/png")
+        _logo_width = int(get_app_setting("login_logo_width", "140"))
+        _logo_height = int(get_app_setting("login_logo_height", "140"))
+        _logo_fit = get_app_setting("login_logo_fit", "contain")  # "contain" = पूरी image दिखेगी (कटेगी नहीं), "cover" = बॉक्स भरेगी (क्रॉप हो सकती है)
 
         if _logo_b64:
-            badge_html = f'<img src="data:{_logo_mime};base64,{_logo_b64}" class="login-logo-img" />'
+            badge_html = (
+                f'<img src="data:{_logo_mime};base64,{_logo_b64}" class="login-logo-img" '
+                f'style="width:{_logo_width}px; height:{_logo_height}px; object-fit:{_logo_fit};" />'
+            )
         else:
             badge_html = '<div class="emoji-badge">🎓🔒</div>'
 
@@ -1233,12 +1239,51 @@ elif active_panel == "⚙️ 6. Admin Panel":
         st.markdown("**🖼️ लोगो अपलोड करें**")
         _current_logo = get_app_setting("login_logo_b64")
         _current_mime = get_app_setting("login_logo_mime", "image/png")
+        _current_w = int(get_app_setting("login_logo_width", "140"))
+        _current_h = int(get_app_setting("login_logo_height", "140"))
+        _current_fit = get_app_setting("login_logo_fit", "contain")
         if _current_logo:
-            st.image(f"data:{_current_mime};base64,{_current_logo}", caption="अभी का लोगो", width=160)
+            st.image(f"data:{_current_mime};base64,{_current_logo}", caption="अभी का ओरिजिनल लोगो", width=160)
         else:
             st.info("अभी कोई लोगो नहीं है — डिफ़ॉल्ट इमोजी (🎓🔒) दिख रहा है।")
 
         uploaded_logo = st.file_uploader("नया लोगो चुनें (PNG/JPG)", type=["png", "jpg", "jpeg", "webp"], key="logo_uploader")
+
+        st.markdown("**📏 लोगो का साइज़ और फिट (पूरी पावर आपके हाथ में)**")
+        wc1, wc2 = st.columns(2)
+        with wc1:
+            new_logo_width = st.slider("चौड़ाई / Width (px)", min_value=30, max_value=400, value=_current_w, step=5, key="logo_width_slider")
+        with wc2:
+            new_logo_height = st.slider("ऊंचाई / Height (px)", min_value=30, max_value=400, value=_current_h, step=5, key="logo_height_slider")
+
+        new_logo_fit = st.radio(
+            "लोगो फिट मोड:",
+            options=["contain", "cover"],
+            index=(0 if _current_fit == "contain" else 1),
+            horizontal=True,
+            key="logo_fit_radio",
+            help="'contain' = पूरी image दिखेगी, कटेगी नहीं (चारों तरफ थोड़ी खाली जगह आ सकती है) | 'cover' = बॉक्स पूरा भरेगा, लेकिन extra हिस्सा क्रॉप हो सकता है"
+        )
+        st.caption("👉 अगर लोगो कट रहा है तो हमेशा **'contain'** मोड चुनें, और Width/Height को अपने लोगो के असली अनुपात (aspect ratio) के हिसाब से सेट करें।")
+
+        if _current_logo:
+            _preview_html = (
+                f'<div style="text-align:center; background:#f6f8fb; border:1px dashed #c7d1e0; '
+                f'border-radius:10px; padding:14px;">'
+                f'<img src="data:{_current_mime};base64,{_current_logo}" '
+                f'style="width:{new_logo_width}px; height:{new_logo_height}px; object-fit:{new_logo_fit}; '
+                f'border-radius:10px; background:#fff;" /></div>'
+            )
+            st.markdown("**👁️ लाइव प्रिव्यू (Login स्क्रीन पर ऐसा दिखेगा):**")
+            st.markdown(_preview_html, unsafe_allow_html=True)
+
+        if st.button("📏 साइज़ & फिट सेव करें", use_container_width=True, key="save_logo_size_btn"):
+            set_app_setting("login_logo_width", str(new_logo_width))
+            set_app_setting("login_logo_height", str(new_logo_height))
+            set_app_setting("login_logo_fit", new_logo_fit)
+            st.success(f"🎉 लोगो साइज़ ({new_logo_width}x{new_logo_height}px, {new_logo_fit}) सेव हो गया!")
+            st.rerun()
+
         lc1, lc2 = st.columns(2)
         with lc1:
             if st.button("💾 लोगो सेव करें", use_container_width=True, disabled=(uploaded_logo is None)):
