@@ -394,8 +394,10 @@ def get_all_approvals(prefix):
     )
     return cursor.fetchall()
 
-def render_print_button(df, title, button_label="🖨️ इस लिस्ट को A4 पर प्रिंट करें", key_suffix=""):
-    """दिए गए DataFrame को A4-साइज़ प्रिंट-फ्रेंडली फॉर्मेट में एक नई विंडो में खोलकर सीधे प्रिंट डायलॉग खोलता है।"""
+def render_print_button(df, title, button_label="🖨️ इस लिस्ट को A4 पर प्रिंट करें", key_suffix="", orientation="portrait"):
+    """दिए गए DataFrame को A4-साइज़ प्रिंट-फ्रेंडली फॉर्मेट में एक नई विंडो में खोलकर सीधे प्रिंट डायलॉग खोलता है।
+    orientation: 'portrait' या 'landscape' — यह तय करता है कि प्रिंट पेज सीधा (खड़ा) रहेगा या आड़ा।"""
+    orientation = "landscape" if str(orientation).lower().startswith("land") else "portrait"
     table_html = df.to_html(index=False, escape=True)
     full_html = f"""
     <html>
@@ -403,7 +405,7 @@ def render_print_button(df, title, button_label="🖨️ इस लिस्ट 
     <meta charset="utf-8">
     <title>{title}</title>
     <style>
-        @page {{ size: A4; margin: 14mm; }}
+        @page {{ size: A4 {orientation}; margin: 14mm; }}
         body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; }}
         h2 {{ text-align: center; color: #1a3c6e; margin-bottom: 4px; }}
         p.meta {{ text-align: center; color: #666; font-size: 12px; margin-top: 0; margin-bottom: 16px; }}
@@ -415,7 +417,7 @@ def render_print_button(df, title, button_label="🖨️ इस लिस्ट 
     </head>
     <body>
         <h2>{title}</h2>
-        <p class="meta">तारीख़: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}</p>
+        <p class="meta">तारीख़: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')} &nbsp;|&nbsp; पेज: A4 ({"लैंडस्केप" if orientation == "landscape" else "पोर्ट्रेट"})</p>
         {table_html}
     </body>
     </html>
@@ -798,10 +800,17 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         ]
         approved_display_df = pd.DataFrame(approved_rows)
         st.dataframe(approved_display_df, use_container_width=True, hide_index=True)
+        panel_orientation = st.radio(
+            "🖨️ प्रिंट ओरिएंटेशन चुनें:",
+            options=["📄 Portrait (सीधा)", "📃 Landscape (आड़ा)"],
+            horizontal=True,
+            key=f"orientation_panel_{prefix}"
+        )
         render_print_button(
             approved_display_df,
             title=f"Approved List - {prefix.upper()}",
-            key_suffix=f"panel_{prefix}"
+            key_suffix=f"panel_{prefix}",
+            orientation="landscape" if "Landscape" in panel_orientation else "portrait"
         )
 
         revoke_choice = st.selectbox(
@@ -1449,10 +1458,17 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             _approved_students_df.insert(0, "✅ Approve किया (By)", [a[1] for a in _approved_hits])
                             _approved_students_df.insert(1, "🕒 Approve समय", [a[2] for a in _approved_hits])
                             st.dataframe(_approved_students_df, use_container_width=True, hide_index=True)
+                            _dash_orientation = st.radio(
+                                "🖨️ प्रिंट ओरिएंटेशन चुनें:",
+                                options=["📄 Portrait (सीधा)", "📃 Landscape (आड़ा)"],
+                                horizontal=True,
+                                key=f"orientation_dash_{deg_info['display']}"
+                            )
                             render_print_button(
                                 _approved_students_df,
                                 title=f"Approved Students List - {deg_info['display']}",
-                                key_suffix=f"dash_{deg_info['display']}".replace(" ", "_").replace(".", "")
+                                key_suffix=f"dash_{deg_info['display']}".replace(" ", "_").replace(".", ""),
+                                orientation="landscape" if "Landscape" in _dash_orientation else "portrait"
                             )
                                     
 # =========================================================================
