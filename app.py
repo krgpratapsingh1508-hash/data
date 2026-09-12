@@ -271,6 +271,19 @@ def set_panel_hidden(panel_key, hidden_flag):
     cursor.execute("UPDATE panel_auth SET hidden = ? WHERE panel_key = ?", (1 if hidden_flag else 0, panel_key))
     conn.commit()
 
+# 5b. ✅ सब्जेक्ट अप्रूवल स्टोरेज (Panel 3/4 में "गलत विषय" को मैन्युअली Approve करने के लिए)
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS subject_approvals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_key TEXT,
+        panel_prefix TEXT,
+        approved_by TEXT,
+        approved_at TEXT,
+        UNIQUE(student_key, panel_prefix)
+    )
+""")
+conn.commit()
+
 # 5. ऐप सेटिंग्स स्टोरेज (Login टाइटल + लोगो — सिर्फ Admin बदल सकता है)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -332,6 +345,53 @@ def load_raw_data():
     if not records:
         return pd.DataFrame()
     return pd.DataFrame(records)
+
+import datetime
+
+# =========================================================================
+# ✅ "गलत विषय" Approve सिस्टम — हेल्पर फंक्शन्स
+# =========================================================================
+def find_student_key_col(df):
+    """छात्र की पहचान के लिए सबसे उपयुक्त कॉलम ढूंढना (Roll/Enrollment/Name)"""
+    priority_keywords = ['roll', 'enrollment', 'enroll', 'admission', 'regn', 'registration', 'uid', 'scholar']
+    for kw in priority_keywords:
+        col = next((c for c in df.columns if kw in c.lower()), None)
+        if col:
+            return col
+    return next((c for c in df.columns if 'name' in c.lower()), None)
+
+def get_student_key(row, position, key_col):
+    """हर छात्र के लिए एक यूनीक 'key' बनाना (approvals स्टोर करने के लिए)"""
+    if key_col and key_col in row.index and not pd.isna(row[key_col]) and str(row[key_col]).strip():
+        return str(row[key_col]).strip()
+    return f"row-{position}"
+
+def get_approval(student_key, prefix):
+    cursor.execute(
+        "SELECT approved_by, approved_at FROM subject_approvals WHERE student_key = ? AND panel_prefix = ?",
+        (student_key, prefix)
+    )
+    return cursor.fetchone()
+
+def add_approval(student_key, prefix, approved_by):
+    cursor.execute("""
+        INSERT INTO subject_approvals (student_key, panel_prefix, approved_by, approved_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(student_key, panel_prefix) DO UPDATE SET
+            approved_by = excluded.approved_by, approved_at = excluded.approved_at
+    """, (student_key, prefix, approved_by, datetime.datetime.now().strftime("%d-%m-%Y %H:%M")))
+    conn.commit()
+
+def remove_approval(student_key, prefix):
+    cursor.execute("DELETE FROM subject_approvals WHERE student_key = ? AND panel_prefix = ?", (student_key, prefix))
+    conn.commit()
+
+def get_all_approvals(prefix):
+    cursor.execute(
+        "SELECT student_key, approved_by, approved_at FROM subject_approvals WHERE panel_prefix = ? ORDER BY approved_at DESC",
+        (prefix,)
+    )
+    return cursor.fetchall()
 
 # Session States Management
 if "ok" not in st.session_state: st.session_state["ok"] = False
@@ -460,10 +520,11 @@ else:
 import io
 from openpyxl.styles import PatternFill, Border, Side
 
-def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, mdc_col_found, voc_col_found, pw_col_found, master_rules=None, sheet_name="Verified_Data"):
+def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, mdc_col_found, voc_col_found, pw_col_found, master_rules=None, sheet_name="Verified_Data", approved_keys=None, key_col=None, prefix=None):
     """
-    🔧 रीयूज़ेबल फ़ंक्शन: किसी भी DataFrame को रंगीन (🔴 गलत / 🔵 खाली) Excel bytes में बदलता है।
+    🔧 रीयूज़ेबल फ़ंक्शन: किसी भी DataFrame को रंगीन (🔴 गलत / 🔵 खाली / 🟢 Approved) Excel bytes में बदलता है।
     Panel 3/4 और Admin Panel — दोनों जगह इसी फ़ंक्शन का इस्तेमाल होता है, ताकि रंग-कोडिंग हमेशा एक जैसी रहे।
+    approved_keys: उन छात्रों की student_key की list/set, जिन्हें गलत विषय होने के बावजूद Approve किया जा चुका है (उन्हें लाल नहीं, हरा दिखाया जाएगा)।
     """
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -471,12 +532,14 @@ def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, 
         workbook = writer.book
         worksheet = writer.sheets[sheet_name]
 
-        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid")  # ब्लैंक = नीला
-        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")    # गलत = लाल
+        blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid")   # ब्लैंक = नीला
+        red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")     # गलत = लाल
+        green_fill = PatternFill(start_color="D4EDDA", end_color="D4EDDA", fill_type="solid")   # Approved = हरा
         thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
                              top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
 
         targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
+        approved_keys = approved_keys or set()
 
         for idx, (_, row) in enumerate(df_filtered.iterrows()):
             row_num = idx + 2  # एक्सेल डेटा रो
@@ -484,6 +547,8 @@ def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, 
             deg_part = str(row[deg_col]) if deg_col and deg_col in df_filtered.columns else ""
             br_part = str(row[br_col]) if br_col and br_col in df_filtered.columns else ""
             student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
+
+            is_row_approved = get_student_key(row, idx, key_col) in approved_keys
 
             matched_key = "Default"
             if master_rules:
@@ -517,7 +582,7 @@ def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, 
                         valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
 
                         if valid_set and (val_clean not in valid_set):
-                            cell.fill = red_fill
+                            cell.fill = green_fill if is_row_approved else red_fill
                             cell.border = thin_border
 
     return output.getvalue()
@@ -541,73 +606,161 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
     voc_col_found = next((c for c in df_filtered.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
     pw_col_found = next((c for c in df_filtered.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
 
+    # छात्र की पहचान के लिए कॉलम (Roll/Enrollment/Name) — Approve सिस्टम के लिए ज़रूरी
+    key_col = find_student_key_col(df_filtered)
+    targets = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
+
+    # --- 🔎 हर रो के लिए मिसमैच वाले कॉलम निकालने का साझा फ़ंक्शन ---
+    # (लाइव टेबल कलरिंग और नीचे की "Approve" लिस्ट — दोनों जगह इसी लॉजिक का इस्तेमाल होता है)
+    def compute_row_mismatches(row):
+        # 🔧 फिक्स: Degree column + Branch column दोनों को मिलाकर चेक करना
+        # (Biotechnology / Commerce Computer जैसी ब्रांच अक्सर अलग Branch column में होती है, Degree column में नहीं)
+        deg_part = str(row[deg_col]) if deg_col else ""
+        br_part = str(row[br_col]) if br_col else ""
+        student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
+
+        matched_key = "Default"
+        if master_rules:
+            sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
+            for rule_key in sorted_keys:
+                # 🔧 फिक्स: पूरा नाम एक साथ ढूंढने के बजाय हर word अलग-अलग ढूंढना
+                # (जैसे "B.Com. Computer" -> "bcom" और "computer" दोनों कहीं भी मिलने चाहिए)
+                rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
+                if rule_words and all(w in student_deg for w in rule_words):
+                    matched_key = rule_key
+                    break
+
+        c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
+
+        mismatched_cols = []
+        for col_name, rule_key in targets.items():
+            if col_name and col_name in df_filtered.columns:
+                val = row[col_name]
+                if not (pd.isna(val) or str(val).strip() == ""):
+                    val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
+                    valid_list = c_rule.get(rule_key, [])
+                    valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
+                    if valid_set and (val_clean not in valid_set):
+                        mismatched_cols.append(col_name)
+        return mismatched_cols
+
     # --- 🖥️ लाइव वैरिफिकेशन स्टाइलर फ़ंक्शन (स्क्रीन ग्रिड के लिए फिक्स) ---
     def cell_styler(dataframe):
         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
-        targets = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
-        
-        for index, row in dataframe.iterrows():
-            # 🔧 फिक्स: Degree column + Branch column दोनों को मिलाकर चेक करना
-            # (Biotechnology / Commerce Computer जैसी ब्रांच अक्सर अलग Branch column में होती है, Degree column में नहीं)
-            deg_part = str(row[deg_col]) if deg_col else ""
-            br_part = str(row[br_col]) if br_col else ""
-            student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
-            
-            matched_key = "Default"
-            if master_rules:
-                sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
-                for rule_key in sorted_keys:
-                    # 🔧 फिक्स: पूरा नाम एक साथ ढूंढने के बजाय हर word अलग-अलग ढूंढना
-                    # (जैसे "B.Com. Computer" -> "bcom" और "computer" दोनों कहीं भी मिलने चाहिए)
-                    rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
-                    if rule_words and all(w in student_deg for w in rule_words):
-                        matched_key = rule_key
-                        break
-            
-            c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
-            
+
+        for position, (index, row) in enumerate(dataframe.iterrows()):
             # ब्रांच की खाली चेकिंग
             if br_col and br_col in dataframe.columns:
                 b_val = row[br_col]
                 if pd.isna(b_val) or str(b_val).strip() == "":
                     s_df.at[index, br_col] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-            
+
+            student_key = get_student_key(row, position, key_col)
+            approval = get_approval(student_key, prefix)
+            mismatched_cols = compute_row_mismatches(row)
+
             # स्क्रीन पर नियमों के अनुसार सटीक लाइव कलर कोडिंग
-            for col_name, rule_key in targets.items():
+            for col_name in targets:
                 if col_name and col_name in dataframe.columns:
                     val = row[col_name]
-                    
                     # 🔵 स्थिति 1: अगर पूरी तरह से ब्लैंक है तो नीला करें
                     if pd.isna(val) or str(val).strip() == "":
                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
-                    # 🔴 स्थिति 2: अगर भरा हुआ विषय नियमों से बाहर है तो लाल करें
-                    else:
-                        val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
-                        valid_list = c_rule.get(rule_key, [])
-                        valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
-                        if valid_set and (val_clean not in valid_set):
-                            s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
+
+            # 🔴 गलत विषय → लाल | ✅ अगर पहले से Approve हो चुका है → हरा (अब गलत नहीं माना जाएगा)
+            for col_name in mismatched_cols:
+                if approval:
+                    s_df.at[index, col_name] = 'background-color: #d4edda; color: #155724; font-weight: bold; border: 2px solid #28a745;'
+                else:
+                    s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
         return s_df
 
     st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
-    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच)")
+    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच) | 🟢 हरा सेल = Approved (मान्य किया गया, अब गलत नहीं गिना जाएगा)")
     
     # स्क्रीन पर सीरियल नंबर 1 से शुरू करना
     df_filtered.index = range(1, len(df_filtered) + 1)
     st.dataframe(df_filtered.style.apply(cell_styler, axis=None), height=500, use_container_width=True)
 
+    # approved_keys सेट पहले से निकाल लेना ताकि एक्सेल डाउनलोड और नीचे की लिस्ट दोनों इस्तेमाल कर सकें
+    all_approvals_now = get_all_approvals(prefix)
+    approved_keys_set = {a[0] for a in all_approvals_now}
+
     # --- 🚨 📥 रंगीन एक्सेल डाउनलोड (अब शेयर्ड फ़ंक्शन का इस्तेमाल कर रहा है) 🚨 ---
     processed_data = generate_colored_excel_bytes(
         df_filtered, deg_col, br_col, minor_col_found, mdc_col_found, voc_col_found, pw_col_found,
-        master_rules=master_rules, sheet_name="Verified_Data"
+        master_rules=master_rules, sheet_name="Verified_Data", approved_keys=approved_keys_set, key_col=key_col
     )
     st.download_button(
-        label=f"📥 रंगीन (🔴/🔵) {prefix.upper()} डेटा एक्सेल डाउनलोड करें",
+        label=f"📥 रंगीन (🔴/🔵/🟢) {prefix.upper()} डेटा एक्सेल डाउनलोड करें",
         data=processed_data,
         file_name=f"Verified_{prefix.upper()}_Colored_Data.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key=f"download_validated_excel_{prefix}"
     )
+
+    # =====================================================================
+    # ✅ "गलत विषय" Approve करने का सिस्टम
+    # =====================================================================
+    st.divider()
+    st.subheader("🛠️ गलत विषय Approve करें")
+    st.caption("अगर किसी छात्र का विषय मास्टर गाइडलाइन से मैच नहीं हो रहा लेकिन वह सही है, तो यहाँ से उसे Approve करें — फिर वह टेबल में लाल नहीं, हरा (✅ Approved) दिखेगा।")
+
+    pending_students = []
+    for position, (index, row) in enumerate(df_filtered.iterrows()):
+        mismatched_cols = compute_row_mismatches(row)
+        if mismatched_cols:
+            student_key = get_student_key(row, position, key_col)
+            if not get_approval(student_key, prefix):
+                pending_students.append((index, row, student_key, mismatched_cols))
+
+    if not pending_students:
+        st.info("✅ फिलहाल कोई भी 'गलत विषय' वाला छात्र Approve होने के लिए बाकी नहीं है।")
+    else:
+        for index, row, student_key, mismatched_cols in pending_students:
+            name_display = str(row[key_col]) if key_col and key_col in df_filtered.columns else f"रो #{index}"
+            with st.expander(f"⚠️ {name_display} — गलत कॉलम: {', '.join(mismatched_cols)}"):
+                st.write({c: row[c] for c in mismatched_cols})
+                appr_col1, appr_col2 = st.columns([2, 1])
+                with appr_col1:
+                    approver_role = st.selectbox(
+                        "किसने Approve किया?",
+                        ["Nodal", "Student", "Principal"],
+                        key=f"approver_role_{prefix}_{student_key}_{index}"
+                    )
+                with appr_col2:
+                    st.write("")
+                    if st.button("✅ Approve करें", key=f"approve_btn_{prefix}_{student_key}_{index}", use_container_width=True):
+                        add_approval(student_key, prefix, approver_role)
+                        st.success(f"🎉 {name_display} को {approver_role} द्वारा Approve कर दिया गया!")
+                        st.rerun()
+
+    # =====================================================================
+    # 📋 Approved List (जिन छात्रों का गलत विषय Approve किया जा चुका है)
+    # =====================================================================
+    st.divider()
+    st.subheader("📋 Approved List")
+    st.caption("यहाँ वो सभी छात्र दिखेंगे जिनका 'गलत विषय' मान्य (Approve) किया जा चुका है — साथ में किसने Approve किया, यह भी दिखेगा।")
+
+    if not all_approvals_now:
+        st.info("अभी तक कोई भी छात्र Approve नहीं हुआ है।")
+    else:
+        approved_rows = [
+            {"छात्र (Key)": sk, "Approve किया": ab, "समय": at}
+            for sk, ab, at in all_approvals_now
+        ]
+        st.dataframe(pd.DataFrame(approved_rows), use_container_width=True, hide_index=True)
+
+        revoke_choice = st.selectbox(
+            "❌ किसी Approval को हटाना है? (Revoke करें):",
+            ["-- चुनें --"] + [a[0] for a in all_approvals_now],
+            key=f"revoke_select_{prefix}"
+        )
+        if revoke_choice != "-- चुनें --":
+            if st.button("🗑️ चुनी गई Approval हटाएं (Revoke)", key=f"revoke_btn_{prefix}"):
+                remove_approval(revoke_choice, prefix)
+                st.success("🎉 Approval हटा दी गई — यह छात्र अब फिर से 'गलत विषय' में गिना जाएगा।")
+                st.rerun()
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
@@ -1385,7 +1538,7 @@ elif active_panel == "⚙️ 6. Admin Panel":
         return deg_c, br_c, min_c, mdc_c, voc_c, pw_c
 
     st.subheader("📥 डेटाबेस बैकअप डाउनलोड करें")
-    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच)")
+    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच) | 🟢 हरा सेल = Approved (मान्य किया गया)")
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("#### 🎓 UG डेटा बैकअप")
@@ -1398,9 +1551,12 @@ elif active_panel == "⚙️ 6. Admin Panel":
                 key="admin_ug_csv_dl"
             )
             deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_ug_download)
+            _ug_key_col = find_student_key_col(df_ug_download)
+            _ug_approved_keys = {a[0] for a in get_all_approvals("ug")}
             ug_colored = generate_colored_excel_bytes(
                 df_ug_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
-                master_rules=_admin_ug_rules, sheet_name="UG_Backup"
+                master_rules=_admin_ug_rules, sheet_name="UG_Backup",
+                approved_keys=_ug_approved_keys, key_col=_ug_key_col
             )
             st.download_button(
                 label="📥 रंगीन (🔴/🔵) UG डेटा एक्सेल डाउनलोड करें",
@@ -1423,9 +1579,12 @@ elif active_panel == "⚙️ 6. Admin Panel":
                 key="admin_pg_csv_dl"
             )
             deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_pg_download)
+            _pg_key_col = find_student_key_col(df_pg_download)
+            _pg_approved_keys = {a[0] for a in get_all_approvals("pg")}
             pg_colored = generate_colored_excel_bytes(
                 df_pg_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
-                master_rules=None, sheet_name="PG_Backup"
+                master_rules=None, sheet_name="PG_Backup",
+                approved_keys=_pg_approved_keys, key_col=_pg_key_col
             )
             st.download_button(
                 label="📥 रंगीन (🔵) PG डेटा एक्सेल डाउनलोड करें",
