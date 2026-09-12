@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import json
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="NEP Master Data System", page_icon="🎓", layout="wide")
 
@@ -393,6 +394,52 @@ def get_all_approvals(prefix):
     )
     return cursor.fetchall()
 
+def render_print_button(df, title, button_label="🖨️ इस लिस्ट को A4 पर प्रिंट करें", key_suffix=""):
+    """दिए गए DataFrame को A4-साइज़ प्रिंट-फ्रेंडली फॉर्मेट में एक नई विंडो में खोलकर सीधे प्रिंट डायलॉग खोलता है।"""
+    table_html = df.to_html(index=False, escape=True)
+    full_html = f"""
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <title>{title}</title>
+    <style>
+        @page {{ size: A4; margin: 14mm; }}
+        body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; }}
+        h2 {{ text-align: center; color: #1a3c6e; margin-bottom: 4px; }}
+        p.meta {{ text-align: center; color: #666; font-size: 12px; margin-top: 0; margin-bottom: 16px; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th, td {{ border: 1px solid #444; padding: 6px 8px; font-size: 12px; text-align: left; word-break: break-word; }}
+        th {{ background-color: #eef3ff; }}
+        tr:nth-child(even) {{ background-color: #fafafa; }}
+    </style>
+    </head>
+    <body>
+        <h2>{title}</h2>
+        <p class="meta">तारीख़: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')}</p>
+        {table_html}
+    </body>
+    </html>
+    """
+    escaped_json = json.dumps(full_html)
+    btn_html = f"""
+    <button id="printBtn_{key_suffix}" style="
+        background-color:#1a73e8; color:white; border:none; border-radius:8px;
+        padding:8px 16px; font-weight:600; cursor:pointer; font-size:14px;">
+        {button_label}
+    </button>
+    <script>
+        document.getElementById("printBtn_{key_suffix}").onclick = function() {{
+            var content = {escaped_json};
+            var w = window.open('', '_blank');
+            w.document.write(content);
+            w.document.close();
+            w.focus();
+            setTimeout(function() {{ w.print(); }}, 300);
+        }};
+    </script>
+    """
+    components.html(btn_html, height=55)
+
 # Session States Management
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
@@ -749,7 +796,13 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
             {"छात्र (Key)": sk, "Approve किया": ab, "समय": at}
             for sk, ab, at in all_approvals_now
         ]
-        st.dataframe(pd.DataFrame(approved_rows), use_container_width=True, hide_index=True)
+        approved_display_df = pd.DataFrame(approved_rows)
+        st.dataframe(approved_display_df, use_container_width=True, hide_index=True)
+        render_print_button(
+            approved_display_df,
+            title=f"Approved List - {prefix.upper()}",
+            key_suffix=f"panel_{prefix}"
+        )
 
         revoke_choice = st.selectbox(
             "❌ किसी Approval को हटाना है? (Revoke करें):",
@@ -1396,6 +1449,11 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             _approved_students_df.insert(0, "✅ Approve किया (By)", [a[1] for a in _approved_hits])
                             _approved_students_df.insert(1, "🕒 Approve समय", [a[2] for a in _approved_hits])
                             st.dataframe(_approved_students_df, use_container_width=True, hide_index=True)
+                            render_print_button(
+                                _approved_students_df,
+                                title=f"Approved Students List - {deg_info['display']}",
+                                key_suffix=f"dash_{deg_info['display']}".replace(" ", "_").replace(".", "")
+                            )
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
