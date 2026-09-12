@@ -1373,6 +1373,29 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             use_container_width=True,
                             height=branch_dyn_height
                         )
+
+                        # -------------------------------------------------------------------------
+                        # ✅ Approve किए गए छात्रों का डेटा (Panel 3/4 से जिन्हें Approve किया गया है)
+                        # -------------------------------------------------------------------------
+                        st.divider()
+                        st.markdown("### ✅ Approve किए गए छात्रों का डेटा")
+                        st.caption("जिन छात्रों का 'गलत विषय' Nodal / Student / Principal द्वारा Approve किया जा चुका है, वो नीचे दिखेंगे — इन्हें अब गलत नहीं गिना जाएगा।")
+
+                        _dash_key_col = find_student_key_col(df_to_show)
+                        _approved_hits = []
+                        for _pos, (_idx, _row) in enumerate(df_to_show.iterrows()):
+                            _skey = get_student_key(_row, _pos, _dash_key_col)
+                            _appr = get_approval(_skey, "ug")
+                            if _appr:
+                                _approved_hits.append((_idx, _appr[0], _appr[1]))
+
+                        if not _approved_hits:
+                            st.info("इस डिग्री/ब्रांच में अभी तक कोई भी छात्र Approve नहीं हुआ है।")
+                        else:
+                            _approved_students_df = df_to_show.loc[[i for i, _, _ in _approved_hits]].copy()
+                            _approved_students_df.insert(0, "✅ Approve किया (By)", [a[1] for a in _approved_hits])
+                            _approved_students_df.insert(1, "🕒 Approve समय", [a[2] for a in _approved_hits])
+                            st.dataframe(_approved_students_df, use_container_width=True, hide_index=True)
                                     
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
