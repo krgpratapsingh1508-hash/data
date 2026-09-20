@@ -1432,7 +1432,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                     if _scope:
                         st.divider()
                         st.markdown(f"### 🎓 डिग्री + ब्रांच-वाइज समरी — {selected_category}")
-                        st.caption("हर डिग्री और ब्रांच के सामने कि किस विषय में कितने छात्र हैं। 🔵 नीली रो = डेटा खाली है | 🔴 लाल रो = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)।")
+                        st.caption("हर डिग्री और ब्रांच के सामने कुल छात्र, और चुनी हुई श्रेणी में कितने सही (✅), गलत (🔴) और खाली (🔵) हैं। 🔴 लाल रो = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय | 🔵 नीली रो = डेटा खाली है (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)।")
 
                         _db = df_deg_filtered.copy()
 
@@ -1478,31 +1478,39 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 return bool(vs) and (_norm_txt(v) not in vs)
 
                             _db["_wrong"] = _db.apply(_wrong_flag_db, axis=1)
-                            _db["Subject (विषय)"] = _clean_key(_db[_c_col])
+                            _db["_blank"] = _db[_c_col].isna() | (_db[_c_col].astype(str).str.strip() == "")
 
                             db_summary = (
-                                _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)", "Subject (विषय)"])["_wrong"]
-                                .agg(["size", "sum"]).reset_index()
+                                _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"])
+                                .agg(_total=("_wrong", "size"), _wrong=("_wrong", "sum"), _blank=("_blank", "sum"))
+                                .reset_index()
                             )
-                            db_summary.columns = ["Degree (डिग्री)", "Branch (ब्रांच)", "Subject (विषय)", "छात्रों की संख्या (Count)", "🔴 गलत (Wrong)"]
-                            db_summary["🔴 गलत (Wrong)"] = db_summary["🔴 गलत (Wrong)"].astype(int)
+                            db_summary["_wrong"] = db_summary["_wrong"].astype(int)
+                            db_summary["_blank"] = db_summary["_blank"].astype(int)
+                            db_summary["_ok"] = db_summary["_total"] - db_summary["_wrong"] - db_summary["_blank"]
+                            db_summary = db_summary[["Degree (डिग्री)", "Branch (ब्रांच)", "_total", "_ok", "_wrong", "_blank"]]
+                            db_summary.columns = [
+                                "Degree (डिग्री)", "Branch (ब्रांच)",
+                                "कुल छात्र (Total)", "✅ सही (Correct)", "🔴 गलत (Wrong)", "🔵 खाली (Blank)"
+                            ]
                             db_summary = db_summary.sort_values(
-                                ["Degree (डिग्री)", "Branch (ब्रांच)", "छात्रों की संख्या (Count)"],
-                                ascending=[True, True, False]
+                                ["Degree (डिग्री)", "कुल छात्र (Total)"], ascending=[True, False]
                             ).reset_index(drop=True)
 
                             def _db_row_styler(row):
                                 if row["🔴 गलत (Wrong)"] > 0:
                                     return [_red] * len(row)
-                                if row["Subject (विषय)"] == "(खाली/Blank)":
+                                if row["🔵 खाली (Blank)"] > 0:
                                     return [_blue] * len(row)
                                 return [''] * len(row)
 
-                            dm1, dm2 = st.columns(2)
+                            dm1, dm2, dm3 = st.columns(3)
                             with dm1:
-                                st.metric("📚 कुल डिग्री+ब्रांच+विषय कॉम्बिनेशन", len(db_summary))
+                                st.metric("🎓 कुल डिग्री+ब्रांच कॉम्बिनेशन", len(db_summary))
                             with dm2:
-                                st.metric("🔴 गलत कॉम्बिनेशन", int((db_summary["🔴 गलत (Wrong)"] > 0).sum()))
+                                st.metric("🔴 कुल गलत छात्र", int(db_summary["🔴 गलत (Wrong)"].sum()))
+                            with dm3:
+                                st.metric("🔵 कुल खाली सेल", int(db_summary["🔵 खाली (Blank)"].sum()))
 
                             st.dataframe(
                                 db_summary.style.apply(_db_row_styler, axis=1),
