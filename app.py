@@ -165,6 +165,44 @@ st.markdown("""
         color: #1a6e3c;
         font-weight: 600;
     }
+
+    /* ============== 🎛️ Admin सेक्शन Hide / Show टॉगल बटन ============== */
+    div[class*="st-key-admin_sec_btn_"] button {
+        border-radius: 999px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.2px;
+        padding: 6px 14px !important;
+        border: none !important;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+        transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+    }
+    div[class*="st-key-admin_sec_btn_"] button,
+    div[class*="st-key-admin_sec_btn_"] button p {
+        color: #ffffff !important;
+    }
+    div[class*="st-key-admin_sec_btn_"] button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+        filter: brightness(1.07);
+    }
+    div[class*="st-key-admin_sec_btn_"] button:active {
+        transform: translateY(0) scale(0.98);
+    }
+    div[class*="st-key-admin_sec_btn_"][class*="__hidebtn"] button {
+        background: linear-gradient(135deg, #ff7a59, #e8433f) !important;
+    }
+    div[class*="st-key-admin_sec_btn_"][class*="__showbtn"] button {
+        background: linear-gradient(135deg, #2bb673, #0f9d58) !important;
+    }
+    .admin-sec-hidden-note {
+        background: #f6f8fb;
+        border: 1px dashed #c7d1e0;
+        color: #6b7688;
+        font-size: 13px;
+        border-radius: 10px;
+        padding: 8px 14px;
+        margin: 2px 0 6px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -174,6 +212,36 @@ def render_footer():
         "NEP Master Data System © 2026</div>",
         unsafe_allow_html=True
     )
+
+def admin_section_toggle(key, title, caption=None, default_open=True):
+    """Admin पैनल के हर सेक्शन के हेडर के साथ डिज़ाइनर Hide / Show बटन लगाता है।
+    True लौटाए तो सेक्शन खुला है (कंटेंट दिखाओ), False हो तो छिपा है।"""
+    state_key = f"admin_sec_open_{key}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = default_open
+    is_open = st.session_state[state_key]
+
+    head_col, btn_col = st.columns([5, 1.6])
+    with head_col:
+        st.subheader(title)
+        if caption:
+            st.caption(caption)
+    with btn_col:
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        if is_open:
+            btn_label, btn_key = "🙈 Hide करें", f"admin_sec_btn_{key}__hidebtn"
+        else:
+            btn_label, btn_key = "👁️ Show करें", f"admin_sec_btn_{key}__showbtn"
+        if st.button(btn_label, key=btn_key, use_container_width=True):
+            st.session_state[state_key] = not is_open
+            st.rerun()
+
+    if not is_open:
+        st.markdown(
+            "<div class='admin-sec-hidden-note'>🙈 यह सेक्शन अभी छिपा हुआ है — दिखाने के लिए दाईं ओर 'Show करें' दबाएँ।</div>",
+            unsafe_allow_html=True
+        )
+    return is_open
 
 # =========================================================================
 # डेटाबेस सेटअप - टेबल्स संरचना (Raw, Permanent और Rules Lock)
@@ -1653,241 +1721,237 @@ elif active_panel == "⚙️ 6. Admin Panel":
     # =====================================================================
     # 🎨 लॉगिन स्क्रीन कस्टमाइज़ेशन (टाइटल + लोगो अपलोड)
     # =====================================================================
-    st.subheader("🎨 लॉगिन स्क्रीन कस्टमाइज़ करें")
-    st.caption("यहाँ से आप लॉगिन पेज पर दिखने वाला टाइटल बदल सकते हैं, और इमोजी की जगह अपना खुद का लोगो अपलोड कर सकते हैं।")
+    if admin_section_toggle("login", "🎨 लॉगिन स्क्रीन कस्टमाइज़ करें", "यहाँ से आप लॉगिन पेज पर दिखने वाला टाइटल बदल सकते हैं, और इमोजी की जगह अपना खुद का लोगो अपलोड कर सकते हैं।"):
 
-    logo_col, title_col = st.columns([1, 1.4])
+        logo_col, title_col = st.columns([1, 1.4])
 
-    with logo_col:
-        st.markdown("**🖼️ लोगो अपलोड करें**")
-        _current_logo = get_app_setting("login_logo_b64")
-        _current_mime = get_app_setting("login_logo_mime", "image/png")
-        _current_w = int(get_app_setting("login_logo_width", "140"))
-        _current_h = int(get_app_setting("login_logo_height", "140"))
-        _current_fit = get_app_setting("login_logo_fit", "contain")
-        if _current_logo:
-            st.image(f"data:{_current_mime};base64,{_current_logo}", caption="अभी का ओरिजिनल लोगो", width=160)
-        else:
-            st.info("अभी कोई लोगो नहीं है — डिफ़ॉल्ट इमोजी (🎓🔒) दिख रहा है।")
+        with logo_col:
+            st.markdown("**🖼️ लोगो अपलोड करें**")
+            _current_logo = get_app_setting("login_logo_b64")
+            _current_mime = get_app_setting("login_logo_mime", "image/png")
+            _current_w = int(get_app_setting("login_logo_width", "140"))
+            _current_h = int(get_app_setting("login_logo_height", "140"))
+            _current_fit = get_app_setting("login_logo_fit", "contain")
+            if _current_logo:
+                st.image(f"data:{_current_mime};base64,{_current_logo}", caption="अभी का ओरिजिनल लोगो", width=160)
+            else:
+                st.info("अभी कोई लोगो नहीं है — डिफ़ॉल्ट इमोजी (🎓🔒) दिख रहा है।")
 
-        uploaded_logo = st.file_uploader("नया लोगो चुनें (PNG/JPG)", type=["png", "jpg", "jpeg", "webp"], key="logo_uploader")
+            uploaded_logo = st.file_uploader("नया लोगो चुनें (PNG/JPG)", type=["png", "jpg", "jpeg", "webp"], key="logo_uploader")
 
-        st.markdown("**📏 लोगो का साइज़ और फिट (पूरी पावर आपके हाथ में)**")
-        wc1, wc2 = st.columns(2)
-        with wc1:
-            new_logo_width = st.slider("चौड़ाई / Width (px)", min_value=30, max_value=400, value=_current_w, step=5, key="logo_width_slider")
-        with wc2:
-            new_logo_height = st.slider("ऊंचाई / Height (px)", min_value=30, max_value=400, value=_current_h, step=5, key="logo_height_slider")
+            st.markdown("**📏 लोगो का साइज़ और फिट (पूरी पावर आपके हाथ में)**")
+            wc1, wc2 = st.columns(2)
+            with wc1:
+                new_logo_width = st.slider("चौड़ाई / Width (px)", min_value=30, max_value=400, value=_current_w, step=5, key="logo_width_slider")
+            with wc2:
+                new_logo_height = st.slider("ऊंचाई / Height (px)", min_value=30, max_value=400, value=_current_h, step=5, key="logo_height_slider")
 
-        new_logo_fit = st.radio(
-            "लोगो फिट मोड:",
-            options=["contain", "cover"],
-            index=(0 if _current_fit == "contain" else 1),
-            horizontal=True,
-            key="logo_fit_radio",
-            help="'contain' = पूरी image दिखेगी, कटेगी नहीं (चारों तरफ थोड़ी खाली जगह आ सकती है) | 'cover' = बॉक्स पूरा भरेगा, लेकिन extra हिस्सा क्रॉप हो सकता है"
-        )
-        st.caption("👉 अगर लोगो कट रहा है तो हमेशा **'contain'** मोड चुनें, और Width/Height को अपने लोगो के असली अनुपात (aspect ratio) के हिसाब से सेट करें।")
-
-        if _current_logo:
-            _preview_html = (
-                f'<div style="text-align:center; background:#f6f8fb; border:1px dashed #c7d1e0; '
-                f'border-radius:10px; padding:14px;">'
-                f'<img src="data:{_current_mime};base64,{_current_logo}" '
-                f'style="width:{new_logo_width}px; height:{new_logo_height}px; object-fit:{new_logo_fit}; '
-                f'border-radius:10px; background:#fff;" /></div>'
+            new_logo_fit = st.radio(
+                "लोगो फिट मोड:",
+                options=["contain", "cover"],
+                index=(0 if _current_fit == "contain" else 1),
+                horizontal=True,
+                key="logo_fit_radio",
+                help="'contain' = पूरी image दिखेगी, कटेगी नहीं (चारों तरफ थोड़ी खाली जगह आ सकती है) | 'cover' = बॉक्स पूरा भरेगा, लेकिन extra हिस्सा क्रॉप हो सकता है"
             )
-            st.markdown("**👁️ लाइव प्रिव्यू (Login स्क्रीन पर ऐसा दिखेगा):**")
-            st.markdown(_preview_html, unsafe_allow_html=True)
+            st.caption("👉 अगर लोगो कट रहा है तो हमेशा **'contain'** मोड चुनें, और Width/Height को अपने लोगो के असली अनुपात (aspect ratio) के हिसाब से सेट करें।")
 
-        if st.button("📏 साइज़ & फिट सेव करें", use_container_width=True, key="save_logo_size_btn"):
-            set_app_setting("login_logo_width", str(new_logo_width))
-            set_app_setting("login_logo_height", str(new_logo_height))
-            set_app_setting("login_logo_fit", new_logo_fit)
-            st.success(f"🎉 लोगो साइज़ ({new_logo_width}x{new_logo_height}px, {new_logo_fit}) सेव हो गया!")
-            st.rerun()
+            if _current_logo:
+                _preview_html = (
+                    f'<div style="text-align:center; background:#f6f8fb; border:1px dashed #c7d1e0; '
+                    f'border-radius:10px; padding:14px;">'
+                    f'<img src="data:{_current_mime};base64,{_current_logo}" '
+                    f'style="width:{new_logo_width}px; height:{new_logo_height}px; object-fit:{new_logo_fit}; '
+                    f'border-radius:10px; background:#fff;" /></div>'
+                )
+                st.markdown("**👁️ लाइव प्रिव्यू (Login स्क्रीन पर ऐसा दिखेगा):**")
+                st.markdown(_preview_html, unsafe_allow_html=True)
 
-        lc1, lc2 = st.columns(2)
-        with lc1:
-            if st.button("💾 लोगो सेव करें", use_container_width=True, disabled=(uploaded_logo is None)):
-                import base64 as _b64
-                logo_bytes = uploaded_logo.getvalue()
-                encoded = _b64.b64encode(logo_bytes).decode("utf-8")
-                set_app_setting("login_logo_b64", encoded)
-                set_app_setting("login_logo_mime", uploaded_logo.type or "image/png")
-                st.success("🎉 लोगो सफलतापूर्वक सेव हो गया!")
-                st.rerun()
-        with lc2:
-            if st.button("🗑️ लोगो हटाएं (इमोजी दिखाएं)", use_container_width=True, disabled=(not _current_logo)):
-                delete_app_setting("login_logo_b64")
-                delete_app_setting("login_logo_mime")
-                st.success("लोगो हटा दिया गया, अब डिफ़ॉल्ट इमोजी दिखेगा।")
+            if st.button("📏 साइज़ & फिट सेव करें", use_container_width=True, key="save_logo_size_btn"):
+                set_app_setting("login_logo_width", str(new_logo_width))
+                set_app_setting("login_logo_height", str(new_logo_height))
+                set_app_setting("login_logo_fit", new_logo_fit)
+                st.success(f"🎉 लोगो साइज़ ({new_logo_width}x{new_logo_height}px, {new_logo_fit}) सेव हो गया!")
                 st.rerun()
 
-    with title_col:
-        st.markdown("**✏️ टाइटल और सबटाइटल एडिट करें**")
-        _cur_title = get_app_setting("login_title", "NEP Master Data System")
-        _cur_subtitle = get_app_setting("login_subtitle", "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
-        new_title_input = st.text_input("लॉगिन पेज का टाइटल", value=_cur_title, key="login_title_input")
-        new_subtitle_input = st.text_input("लॉगिन पेज का सबटाइटल", value=_cur_subtitle, key="login_subtitle_input")
-        if st.button("💾 टाइटल सेव करें", key="save_login_title_btn"):
-            set_app_setting("login_title", new_title_input.strip() or "NEP Master Data System")
-            set_app_setting("login_subtitle", new_subtitle_input.strip() or "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
-            st.success("🎉 टाइटल सफलतापूर्वक अपडेट हो गया!")
-            st.rerun()
+            lc1, lc2 = st.columns(2)
+            with lc1:
+                if st.button("💾 लोगो सेव करें", use_container_width=True, disabled=(uploaded_logo is None)):
+                    import base64 as _b64
+                    logo_bytes = uploaded_logo.getvalue()
+                    encoded = _b64.b64encode(logo_bytes).decode("utf-8")
+                    set_app_setting("login_logo_b64", encoded)
+                    set_app_setting("login_logo_mime", uploaded_logo.type or "image/png")
+                    st.success("🎉 लोगो सफलतापूर्वक सेव हो गया!")
+                    st.rerun()
+            with lc2:
+                if st.button("🗑️ लोगो हटाएं (इमोजी दिखाएं)", use_container_width=True, disabled=(not _current_logo)):
+                    delete_app_setting("login_logo_b64")
+                    delete_app_setting("login_logo_mime")
+                    st.success("लोगो हटा दिया गया, अब डिफ़ॉल्ट इमोजी दिखेगा।")
+                    st.rerun()
+
+        with title_col:
+            st.markdown("**✏️ टाइटल और सबटाइटल एडिट करें**")
+            _cur_title = get_app_setting("login_title", "NEP Master Data System")
+            _cur_subtitle = get_app_setting("login_subtitle", "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
+            new_title_input = st.text_input("लॉगिन पेज का टाइटल", value=_cur_title, key="login_title_input")
+            new_subtitle_input = st.text_input("लॉगिन पेज का सबटाइटल", value=_cur_subtitle, key="login_subtitle_input")
+            if st.button("💾 टाइटल सेव करें", key="save_login_title_btn"):
+                set_app_setting("login_title", new_title_input.strip() or "NEP Master Data System")
+                set_app_setting("login_subtitle", new_subtitle_input.strip() or "अपना पैनल चुनें और आगे बढ़ने के लिए पासवर्ड डालें")
+                st.success("🎉 टाइटल सफलतापूर्वक अपडेट हो गया!")
+                st.rerun()
 
     st.divider()
 
     # =====================================================================
     # 🔑 पैनल पासवर्ड अपडेट सिस्टम (6 पैनल्स)
     # =====================================================================
-    st.subheader("🔑 पैनल पासवर्ड अपडेट करें")
-    st.caption("यहाँ से आप किसी भी पैनल (P1-P6) का पासवर्ड बदल सकते हैं। बदलने के बाद उस पैनल में लॉगिन के लिए नया पासवर्ड इस्तेमाल होगा।")
+    if admin_section_toggle("passwords", "🔑 पैनल पासवर्ड अपडेट करें", "यहाँ से आप किसी भी पैनल (P1-P6) का पासवर्ड बदल सकते हैं। बदलने के बाद उस पैनल में लॉगिन के लिए नया पासवर्ड इस्तेमाल होगा।"):
 
-    pw_cols = st.columns(3)
-    new_pw_inputs = {}
-    for i, (pk, pname) in enumerate(PANEL_KEY_TO_NAME.items()):
-        with pw_cols[i % 3]:
-            new_pw_inputs[pk] = st.text_input(f"{pname} का नया पासवर्ड", value="", type="password", key=f"pw_input_{pk}", placeholder="खाली छोड़ें तो नहीं बदलेगा")
+        pw_cols = st.columns(3)
+        new_pw_inputs = {}
+        for i, (pk, pname) in enumerate(PANEL_KEY_TO_NAME.items()):
+            with pw_cols[i % 3]:
+                new_pw_inputs[pk] = st.text_input(f"{pname} का नया पासवर्ड", value="", type="password", key=f"pw_input_{pk}", placeholder="खाली छोड़ें तो नहीं बदलेगा")
 
-    if st.button("🔐 पासवर्ड सेव करें", key="save_panel_passwords_btn"):
-        updated_any = False
-        for pk, new_pw in new_pw_inputs.items():
-            if new_pw.strip():
-                set_panel_password(pk, new_pw.strip())
-                updated_any = True
-        if updated_any:
-            st.success("🎉 चुने गए पैनल्स के पासवर्ड सफलतापूर्वक अपडेट हो गए हैं!")
-        else:
-            st.info("कोई नया पासवर्ड नहीं डाला गया, कुछ भी नहीं बदला।")
+        if st.button("🔐 पासवर्ड सेव करें", key="save_panel_passwords_btn"):
+            updated_any = False
+            for pk, new_pw in new_pw_inputs.items():
+                if new_pw.strip():
+                    set_panel_password(pk, new_pw.strip())
+                    updated_any = True
+            if updated_any:
+                st.success("🎉 चुने गए पैनल्स के पासवर्ड सफलतापूर्वक अपडेट हो गए हैं!")
+            else:
+                st.info("कोई नया पासवर्ड नहीं डाला गया, कुछ भी नहीं बदला।")
 
     st.divider()
 
     # =====================================================================
     # 👁️ पैनल हाइड / अनहाइड सिस्टम (P1 से P5 तक)
     # =====================================================================
-    st.subheader("👁️ पैनल Hide / Unhide करें (P1 से P5)")
-    st.caption("जिस पैनल को Hide करेंगे, उसमें सही पासवर्ड डालने पर भी डेटा नहीं दिखेगा (सिर्फ पैनल का ढांचा दिखेगा)। Unhide करने पर डेटा फिर से दिखने लगेगा।")
+    if admin_section_toggle("panelvis", "👁️ पैनल Hide / Unhide करें (P1 से P5)", "जिस पैनल को Hide करेंगे, उसमें सही पासवर्ड डालने पर भी डेटा नहीं दिखेगा (सिर्फ पैनल का ढांचा दिखेगा)। Unhide करने पर डेटा फिर से दिखने लगेगा।"):
 
-    hide_cols = st.columns(5)
-    hide_keys = ["p1", "p2", "p3", "p4", "p5"]
-    new_hidden_state = {}
-    for i, pk in enumerate(hide_keys):
-        with hide_cols[i]:
-            current_hidden = is_panel_hidden(pk)
-            new_hidden_state[pk] = st.checkbox(f"🙈 {PANEL_KEY_TO_NAME[pk]} Hide करें", value=current_hidden, key=f"hide_chk_{pk}")
+        hide_cols = st.columns(5)
+        hide_keys = ["p1", "p2", "p3", "p4", "p5"]
+        new_hidden_state = {}
+        for i, pk in enumerate(hide_keys):
+            with hide_cols[i]:
+                current_hidden = is_panel_hidden(pk)
+                new_hidden_state[pk] = st.checkbox(f"🙈 {PANEL_KEY_TO_NAME[pk]} Hide करें", value=current_hidden, key=f"hide_chk_{pk}")
 
-    if st.button("💾 Hide/Unhide सेटिंग सेव करें", key="save_hide_settings_btn"):
-        for pk, hide_flag in new_hidden_state.items():
-            set_panel_hidden(pk, hide_flag)
-        st.success("🎉 Hide/Unhide सेटिंग सफलतापूर्वक सेव हो गई है!")
-        st.rerun()
-
-    st.divider()
-
-    df_ug_download = load_permanent_data("UG")
-    df_pg_download = load_permanent_data("PG")
-
-    # 🔒 UG मास्टर रूल्स लोड करना ताकि Admin की रंगीन डाउनलोड भी बाकी पैनल्स जैसी सही हो
-    _admin_ug_rules = {}
-    try:
-        cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
-        _locked_row = cursor.fetchone()
-        if _locked_row and _locked_row[0]:
-            _admin_ug_rules = json.loads(_locked_row[0])
-    except Exception:
-        pass
-
-    def _detect_cols(df):
-        deg_c = next((c for c in df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df.columns[0] if len(df.columns) else None)
-        br_c = next((c for c in df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), None)
-        min_c = next((c for c in df.columns if 'minor' in c.lower()), None)
-        mdc_c = next((c for c in df.columns if 'mdc' in c.lower()), None)
-        voc_c = next((c for c in df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
-        pw_c = next((c for c in df.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
-        return deg_c, br_c, min_c, mdc_c, voc_c, pw_c
-
-    st.subheader("📥 डेटाबेस बैकअप डाउनलोड करें")
-    st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच) | 🟢 हरा सेल = Approved (मान्य किया गया)")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("#### 🎓 UG डेटा बैकअप")
-        if df_ug_download is not None and not df_ug_download.empty:
-            st.download_button(
-                label="📥 UG डेटा CSV डाउनलोड करें (सादा)", 
-                data=df_ug_download.to_csv(index=False).encode('utf-8'), 
-                file_name="Approved_UG_Data_Backup.csv", 
-                mime="text/csv",
-                key="admin_ug_csv_dl"
-            )
-            deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_ug_download)
-            _ug_key_col = find_student_key_col(df_ug_download)
-            _ug_approved_keys = {a[0] for a in get_all_approvals("ug")}
-            ug_colored = generate_colored_excel_bytes(
-                df_ug_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
-                master_rules=_admin_ug_rules, sheet_name="UG_Backup",
-                approved_keys=_ug_approved_keys, key_col=_ug_key_col
-            )
-            st.download_button(
-                label="📥 रंगीन (🔴/🔵) UG डेटा एक्सेल डाउनलोड करें",
-                data=ug_colored,
-                file_name="Approved_UG_Colored_Backup.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="admin_ug_colored_dl"
-            )
-        else: 
-            st.info("UG डेटाबेस खाली है।")
-            
-    with c2:
-        st.markdown("#### 📜 PG डेटा बैकअप")
-        if df_pg_download is not None and not df_pg_download.empty:
-            st.download_button(
-                label="📥 PG डेटा CSV डाउनलोड करें (सादा)", 
-                data=df_pg_download.to_csv(index=False).encode('utf-8'), 
-                file_name="Approved_PG_Data_Backup.csv", 
-                mime="text/csv",
-                key="admin_pg_csv_dl"
-            )
-            deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_pg_download)
-            _pg_key_col = find_student_key_col(df_pg_download)
-            _pg_approved_keys = {a[0] for a in get_all_approvals("pg")}
-            pg_colored = generate_colored_excel_bytes(
-                df_pg_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
-                master_rules=None, sheet_name="PG_Backup",
-                approved_keys=_pg_approved_keys, key_col=_pg_key_col
-            )
-            st.download_button(
-                label="📥 रंगीन (🔵) PG डेटा एक्सेल डाउनलोड करें",
-                data=pg_colored,
-                file_name="Approved_PG_Colored_Backup.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="admin_pg_colored_dl",
-                help="PG के लिए फिलहाल कोई मास्टर सब्जेक्ट नियम सेट नहीं है, इसलिए सिर्फ खाली सेल नीले दिखेंगे।"
-            )
-        else: 
-            st.info("PG डेटाबेस खाली है।")
-
-    st.divider()
-    st.subheader("🚨 डेंजर ज़ोन")
-    confirm_reset = st.checkbox("मैं पूरे सिस्टम (रॉ + अप्रूव्ड दोनों डेटाबेस) को रीसेट करने की पुष्टि करता हूँ।")
-    also_delete_rules = st.checkbox("⚠️ लॉक किए गए सब्जेक्ट नियम (Minor/MDC/Voc/PW रूल्स) भी डिलीट करें (सामान्यतः इसे टिक न करें)")
-    if st.button("💥 ऑल डेटाबेस रीसेट करें"):
-        if confirm_reset:
-            cursor.execute("DELETE FROM raw_store")
-            cursor.execute("DELETE FROM perma_store")
-            # 🔧 फिक्स: locked_rules अब डिफ़ॉल्ट रूप से डिलीट नहीं होगा, ताकि लॉक किए गए सब्जेक्ट नियम
-            # नई फ़ाइल अपलोड करने के बाद भी सुरक्षित बने रहें
-            if also_delete_rules:
-                cursor.execute("DELETE FROM locked_rules")
-            conn.commit()
-            st.session_state["deleted_cols"] = []
-            if also_delete_rules:
-                st.success("सिस्टम पूरी तरह से रीसेट हो गया है (डेटा + लॉक किए गए नियम दोनों हट गए)!")
-            else:
-                st.success("डेटा रीसेट हो गया है! लॉक किए गए सब्जेक्ट नियम सुरक्षित रखे गए हैं।")
+        if st.button("💾 Hide/Unhide सेटिंग सेव करें", key="save_hide_settings_btn"):
+            for pk, hide_flag in new_hidden_state.items():
+                set_panel_hidden(pk, hide_flag)
+            st.success("🎉 Hide/Unhide सेटिंग सफलतापूर्वक सेव हो गई है!")
             st.rerun()
-        else: 
-            st.error("कृपया पहले पुष्टि चेकबॉक्स पर टिक करें।")
+
+    st.divider()
+
+    if admin_section_toggle("backup", "📥 डेटाबेस बैकअप डाउनलोड करें", "🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच) | 🟢 हरा सेल = Approved (मान्य किया गया)"):
+        df_ug_download = load_permanent_data("UG")
+        df_pg_download = load_permanent_data("PG")
+
+        # 🔒 UG मास्टर रूल्स लोड करना ताकि Admin की रंगीन डाउनलोड भी बाकी पैनल्स जैसी सही हो
+        _admin_ug_rules = {}
+        try:
+            cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
+            _locked_row = cursor.fetchone()
+            if _locked_row and _locked_row[0]:
+                _admin_ug_rules = json.loads(_locked_row[0])
+        except Exception:
+            pass
+
+        def _detect_cols(df):
+            deg_c = next((c for c in df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df.columns[0] if len(df.columns) else None)
+            br_c = next((c for c in df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), None)
+            min_c = next((c for c in df.columns if 'minor' in c.lower()), None)
+            mdc_c = next((c for c in df.columns if 'mdc' in c.lower()), None)
+            voc_c = next((c for c in df.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
+            pw_c = next((c for c in df.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+            return deg_c, br_c, min_c, mdc_c, voc_c, pw_c
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### 🎓 UG डेटा बैकअप")
+            if df_ug_download is not None and not df_ug_download.empty:
+                st.download_button(
+                    label="📥 UG डेटा CSV डाउनलोड करें (सादा)", 
+                    data=df_ug_download.to_csv(index=False).encode('utf-8'), 
+                    file_name="Approved_UG_Data_Backup.csv", 
+                    mime="text/csv",
+                    key="admin_ug_csv_dl"
+                )
+                deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_ug_download)
+                _ug_key_col = find_student_key_col(df_ug_download)
+                _ug_approved_keys = {a[0] for a in get_all_approvals("ug")}
+                ug_colored = generate_colored_excel_bytes(
+                    df_ug_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
+                    master_rules=_admin_ug_rules, sheet_name="UG_Backup",
+                    approved_keys=_ug_approved_keys, key_col=_ug_key_col
+                )
+                st.download_button(
+                    label="📥 रंगीन (🔴/🔵) UG डेटा एक्सेल डाउनलोड करें",
+                    data=ug_colored,
+                    file_name="Approved_UG_Colored_Backup.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="admin_ug_colored_dl"
+                )
+            else: 
+                st.info("UG डेटाबेस खाली है।")
+            
+        with c2:
+            st.markdown("#### 📜 PG डेटा बैकअप")
+            if df_pg_download is not None and not df_pg_download.empty:
+                st.download_button(
+                    label="📥 PG डेटा CSV डाउनलोड करें (सादा)", 
+                    data=df_pg_download.to_csv(index=False).encode('utf-8'), 
+                    file_name="Approved_PG_Data_Backup.csv", 
+                    mime="text/csv",
+                    key="admin_pg_csv_dl"
+                )
+                deg_c, br_c, min_c, mdc_c, voc_c, pw_c = _detect_cols(df_pg_download)
+                _pg_key_col = find_student_key_col(df_pg_download)
+                _pg_approved_keys = {a[0] for a in get_all_approvals("pg")}
+                pg_colored = generate_colored_excel_bytes(
+                    df_pg_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
+                    master_rules=None, sheet_name="PG_Backup",
+                    approved_keys=_pg_approved_keys, key_col=_pg_key_col
+                )
+                st.download_button(
+                    label="📥 रंगीन (🔵) PG डेटा एक्सेल डाउनलोड करें",
+                    data=pg_colored,
+                    file_name="Approved_PG_Colored_Backup.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="admin_pg_colored_dl",
+                    help="PG के लिए फिलहाल कोई मास्टर सब्जेक्ट नियम सेट नहीं है, इसलिए सिर्फ खाली सेल नीले दिखेंगे।"
+                )
+            else: 
+                st.info("PG डेटाबेस खाली है।")
+
+    st.divider()
+    if admin_section_toggle("danger", "🚨 डेंजर ज़ोन", None):
+        confirm_reset = st.checkbox("मैं पूरे सिस्टम (रॉ + अप्रूव्ड दोनों डेटाबेस) को रीसेट करने की पुष्टि करता हूँ।")
+        also_delete_rules = st.checkbox("⚠️ लॉक किए गए सब्जेक्ट नियम (Minor/MDC/Voc/PW रूल्स) भी डिलीट करें (सामान्यतः इसे टिक न करें)")
+        if st.button("💥 ऑल डेटाबेस रीसेट करें"):
+            if confirm_reset:
+                cursor.execute("DELETE FROM raw_store")
+                cursor.execute("DELETE FROM perma_store")
+                # 🔧 फिक्स: locked_rules अब डिफ़ॉल्ट रूप से डिलीट नहीं होगा, ताकि लॉक किए गए सब्जेक्ट नियम
+                # नई फ़ाइल अपलोड करने के बाद भी सुरक्षित बने रहें
+                if also_delete_rules:
+                    cursor.execute("DELETE FROM locked_rules")
+                conn.commit()
+                st.session_state["deleted_cols"] = []
+                if also_delete_rules:
+                    st.success("सिस्टम पूरी तरह से रीसेट हो गया है (डेटा + लॉक किए गए नियम दोनों हट गए)!")
+                else:
+                    st.success("डेटा रीसेट हो गया है! लॉक किए गए सब्जेक्ट नियम सुरक्षित रखे गए हैं।")
+                st.rerun()
+            else: 
+                st.error("कृपया पहले पुष्टि चेकबॉक्स पर टिक करें।")
 
 # =========================================================================
 # 🏁 फुटर (हर पेज के नीचे प्रोफेशनल क्रेडिट लाइन)
