@@ -213,6 +213,33 @@ def render_footer():
         unsafe_allow_html=True
     )
 
+def inline_section_toggle(key, header_html, default_open=True):
+    """किसी भी टेबल/सेक्शन के हेडर के साथ डिज़ाइनर Hide / Show बटन लगाता है।
+    True = खुला (टेबल दिखाओ), False = छिपा।"""
+    state_key = f"inline_sec_open_{key}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = default_open
+    is_open = st.session_state[state_key]
+
+    head_col, btn_col = st.columns([5, 1.6])
+    with head_col:
+        st.markdown(header_html, unsafe_allow_html=True)
+    with btn_col:
+        if is_open:
+            btn_label, btn_key = "🙈 Hide करें", f"admin_sec_btn_{key}__hidebtn"
+        else:
+            btn_label, btn_key = "👁️ Show करें", f"admin_sec_btn_{key}__showbtn"
+        if st.button(btn_label, key=btn_key, use_container_width=True):
+            st.session_state[state_key] = not is_open
+            st.rerun()
+
+    if not is_open:
+        st.markdown(
+            "<div class='admin-sec-hidden-note'>🙈 यह समरी अभी छिपी हुई है — दिखाने के लिए दाईं ओर 'Show करें' दबाएँ।</div>",
+            unsafe_allow_html=True
+        )
+    return is_open
+
 def admin_section_toggle(key, title, caption=None, default_open=True):
     """Admin पैनल के हर सेक्शन के हेडर के साथ डिज़ाइनर Hide / Show बटन लगाता है।
     True लौटाए तो सेक्शन खुला है (कंटेंट दिखाओ), False हो तो छिपा है।"""
@@ -1372,25 +1399,28 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 return [''] * len(row)
                             
                             if current_cat["rule_key"] == "pw":
-                                st.markdown("**Project Type Summary**<br><span style='color:gray; font-size:12px;'>(प्रोजेक्ट प्रकार की समरी सूची)</span>", unsafe_allow_html=True)
+                                _sum_hdr_html = "**Project Type Summary**<br><span style='color:gray; font-size:12px;'>(प्रोजेक्ट प्रकार की समरी सूची)</span>"
                             else:
-                                st.markdown("**Subject Distribution Summary**<br><span style='color:gray; font-size:12px;'>(विषय आवंटन की समरी सूची)</span>", unsafe_allow_html=True)
+                                _sum_hdr_html = "**Subject Distribution Summary**<br><span style='color:gray; font-size:12px;'>(विषय आवंटन की समरी सूची)</span>"
+                            _sum_key = "subsum_" + "".join(ch if ch.isalnum() else "_" for ch in deg_info["display"])
+                            _show_summary = inline_section_toggle(_sum_key, _sum_hdr_html)
                             
                             # फुल स्क्रीन चौड़ाई (Width) के साथ काउंटर तालिका रेंडर करना
                             # 🔧 फिक्स: टेबल की ऊंचाई अब रोज़ की संख्या के हिसाब से खुद-ब-खुद सेट होगी,
                             # ताकि पूरी लिस्ट एक बार में दिखे और स्क्रॉल न करना पड़े
-                            dynamic_height = min(38 * (len(counts) + 1) + 3, 2000)
-                            st.dataframe(
-                                counts.style.apply(row_styler, axis=1), 
-                                hide_index=True, 
-                                use_container_width=True,
-                                height=dynamic_height,
-                                column_config={
-                                    "Subject": st.column_config.TextColumn(label=current_cat["label"], width=600), 
-                                    "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150),
-                                    **({"Wrong": st.column_config.NumberColumn(label="🔴 गलत (Wrong)", width=150)} if _scope else {})
-                                }
-                            )
+                            if _show_summary:
+                                dynamic_height = min(38 * (len(counts) + 1) + 3, 2000)
+                                st.dataframe(
+                                    counts.style.apply(row_styler, axis=1), 
+                                    hide_index=True, 
+                                    use_container_width=True,
+                                    height=dynamic_height,
+                                    column_config={
+                                        "Subject": st.column_config.TextColumn(label=current_cat["label"], width=600), 
+                                        "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150),
+                                        **({"Wrong": st.column_config.NumberColumn(label="🔴 गलत (Wrong)", width=150)} if _scope else {})
+                                    }
+                                )
                         else:
                             st.caption("इस श्रेणी में कोई डेटा उपलब्ध नहीं है।")
                     else:
