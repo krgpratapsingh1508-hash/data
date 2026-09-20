@@ -1143,6 +1143,8 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
 
         # डिग्रियों की सूची की सटीक मैपिंग (P3 - UG Rules Panel जैसी ही 6 डिग्री/ब्रांच संरचना)
         target_degrees = [
+            {"display": "UG", "scope": "UG"},
+            {"display": "PG", "scope": "PG"},
             {"display": "BA", "keywords": ["ba"]},
             {"display": "B.Sc.", "keywords": ["bsc"], "exclude": ["biotech"]},
             {"display": "B.Sc. Biotechnology", "keywords": ["bsc", "biotech"]},
@@ -1150,6 +1152,25 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
             {"display": "B.Com.", "keywords": ["bcom"], "exclude": ["computer"]},
             {"display": "B.Com. Computer", "keywords": ["bcom", "computer"]}
         ]
+
+        # ---- UG / PG टैब के लिए helper: हर रो की डिग्री पहचानकर उसी के मास्टर नियम लगाना ----
+        _degree_defs = [d for d in target_degrees if "keywords" in d]
+
+        def _norm_txt(x):
+            return str(x).strip().lower().replace(".", "").replace(" ", "")
+
+        def _row_degree_name(row):
+            _d = str(row[deg_col]) if deg_col and deg_col in row.index else ""
+            _b = str(row[br_col]) if br_col and br_col in row.index else ""
+            _v = (_d + " " + _b).lower().replace(".", "").replace(" ", "")
+            _cands = []
+            for _dd in _degree_defs:
+                if all(k in _v for k in _dd["keywords"]) and not any(ex in _v for ex in _dd.get("exclude", [])):
+                    _cands.append((-len(_dd["keywords"]), _v.find(_dd["keywords"][0]), _dd["display"]))
+            if not _cands:
+                return None
+            _cands.sort()
+            return _cands[0][2]
 
         # सभी डिग्रियों के लिए इंटरएक्टिव टैब्स
         tab_titles = [deg["display"] for deg in target_degrees]
@@ -1160,7 +1181,21 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                 st.markdown(f"## 🎓 {deg_info['display']} डैशबोर्ड बोर्ड")
                 
                 # छात्र सूची में से इस विशिष्ट डिग्री के छात्रों को फ़िल्टर करना
-                if deg_col and deg_col in master_df.columns:
+                _scope = deg_info.get("scope")
+                _empty_rules = {"minor": [], "mdc": [], "voc": [], "pw": []}
+
+                def _rules_for_row(row):
+                    if _scope == "UG":
+                        return ug_master_rules.get(_row_degree_name(row), _empty_rules) or _empty_rules
+                    if _scope == "PG":
+                        return _empty_rules  # PG के लिए अभी कोई मास्टर नियम सेट नहीं है
+                    return ug_master_rules.get(deg_info['display'], _empty_rules) or _empty_rules
+
+                if _scope == "UG":
+                    df_deg_filtered = df_ug_all.reset_index(drop=True) if (df_ug_all is not None and not df_ug_all.empty) else pd.DataFrame()
+                elif _scope == "PG":
+                    df_deg_filtered = df_pg_all.reset_index(drop=True) if (df_pg_all is not None and not df_pg_all.empty) else pd.DataFrame()
+                elif deg_col and deg_col in master_df.columns:
                     def match_degree(row):
                         # 🔧 फिक्स: Degree column + Branch column दोनों को मिलाकर चेक करना
                         # (Biotechnology / Commerce Computer जैसी ब्रांच अक्सर अलग Branch column में होती है)
@@ -1232,6 +1267,24 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         # काउंट्स (फ्रीक्वेंसी) की लाइव गणना
                         counts = df_deg_filtered[current_cat["col_name"]].dropna().value_counts().reset_index()
                         counts.columns = ["Subject", "Count"]
+
+                        if _scope:
+                            # UG/PG टैब: हर छात्र की अपनी डिग्री के नियम से सही/गलत गिनना
+                            _c_col = current_cat["col_name"]
+                            _c_rk = current_cat["rule_key"]
+                            _sub = df_deg_filtered[df_deg_filtered[_c_col].notna()].copy()
+
+                            def _wrong_flag(r):
+                                _vs = {_norm_txt(x) for x in _rules_for_row(r).get(_c_rk, [])}
+                                return bool(_vs) and (_norm_txt(r[_c_col]) not in _vs)
+
+                            _sub["_wrong"] = _sub.apply(_wrong_flag, axis=1)
+                            counts = (
+                                _sub.groupby(_c_col)["_wrong"].agg(["size", "sum"]).reset_index()
+                                .sort_values("size", ascending=False).reset_index(drop=True)
+                            )
+                            counts.columns = ["Subject", "Count", "Wrong"]
+                            counts["Wrong"] = counts["Wrong"].astype(int)
                         
                         if not counts.empty:
                             # P3 के लॉक नियमों से वैध विषयों का क्लीन सेट बनाना
@@ -1240,6 +1293,10 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             
                             # ✨ भाग 1 के लिए नया सख्त रो स्टाइलर इंजन (गलत विषय = चमकदार गाढ़ा लाल)
                             def row_styler(row):
+                                if "Wrong" in row.index:
+                                    if row["Wrong"] > 0:
+                                        return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'] * len(row)
+                                    return [''] * len(row)
                                 sub_val = str(row["Subject"]).strip().lower().replace(".", "").replace(" ", "")
                                 # यदि P3 में विषय चुने गए हैं और छात्र का विषय उसमें नहीं है, तो पूरी रो लाल होगी
                                 if valid_set and (sub_val not in valid_set):
@@ -1262,7 +1319,8 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 height=dynamic_height,
                                 column_config={
                                     "Subject": st.column_config.TextColumn(label=current_cat["label"], width=600), 
-                                    "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150)
+                                    "Count": st.column_config.NumberColumn(label="छात्रों की संख्या (Count)", width=150),
+                                    **({"Wrong": st.column_config.NumberColumn(label="🔴 गलत (Wrong)", width=150)} if _scope else {})
                                 }
                             )
                         else:
@@ -1318,6 +1376,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                     }
                     
                     for index, row in df_to_show.iterrows():
+                        _row_rules = _rules_for_row(row)
                         for col_name, rule_key in targets_for_counting.items():
                             if col_name and col_name in df_to_show.columns:
                                 val = row[col_name]
@@ -1325,7 +1384,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                     blank_count += 1
                                 else:
                                     val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
-                                    valid_list = current_deg_rules.get(rule_key, [])
+                                    valid_list = _row_rules.get(rule_key, [])
                                     valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
                                     if valid_set and (val_clean not in valid_set):
                                         wrong_count += 1
@@ -1355,6 +1414,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         }
                         for index, row in dataframe.iterrows():
                             row_has_wrong = False
+                            _row_rules = _rules_for_row(row)
                             for col_name, rule_key in targets.items():
                                 if col_name and col_name in dataframe.columns:
                                     val = row[col_name]
@@ -1362,7 +1422,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
                                     else:
                                         val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
-                                        valid_list = current_deg_rules.get(rule_key, [])
+                                        valid_list = _row_rules.get(rule_key, [])
                                         valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
                                         if valid_set and (val_clean not in valid_set):
                                             s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'
@@ -1396,12 +1456,13 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         }
 
                         def _row_has_wrong_subject(row):
+                            _row_rules = _rules_for_row(row)
                             for col_name, rule_key in targets_for_branch_summary.items():
                                 if col_name and col_name in df_to_show.columns:
                                     val = row[col_name]
                                     if not (pd.isna(val) or str(val).strip() == ""):
                                         val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
-                                        valid_list = current_deg_rules.get(rule_key, [])
+                                        valid_list = _row_rules.get(rule_key, [])
                                         valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
                                         if valid_set and (val_clean not in valid_set):
                                             return True
@@ -1447,7 +1508,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         _approved_hits = []
                         for _pos, (_idx, _row) in enumerate(df_to_show.iterrows()):
                             _skey = get_student_key(_row, _pos, _dash_key_col)
-                            _appr = get_approval(_skey, "ug")
+                            _appr = get_approval(_skey, "pg" if _scope == "PG" else "ug")
                             if _appr:
                                 _approved_hits.append((_idx, _appr[0], _appr[1]))
 
