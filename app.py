@@ -1323,75 +1323,122 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                     **({"Wrong": st.column_config.NumberColumn(label="🔴 गलत (Wrong)", width=150)} if _scope else {})
                                 }
                             )
-
-                            # ---------------------------------------------------------------------
-                            # 🎓 केवल UG / PG टैब: डिग्री + ब्रांच-वाइज विषय समरी (चुनी हुई श्रेणी के लिए)
-                            # ---------------------------------------------------------------------
-                            if _scope:
-                                st.divider()
-                                st.markdown(f"### 🎓 डिग्री + ब्रांच-वाइज {selected_category} समरी")
-                                st.caption("हर डिग्री और ब्रांच के सामने कि किस विषय में कितने छात्र हैं। 🔴 लाल रो = उस डिग्री के मास्टर नियम से मेल न खाने वाले विषय (PG में अभी कोई नियम नहीं है, इसलिए वहाँ सिर्फ गिनती दिखेगी)।")
-
-                                _db = _sub.copy()
-                                _dc = deg_col if (deg_col and deg_col in _db.columns) else None
-                                _bc = br_col if (br_col and br_col in _db.columns and br_col != _dc) else None
-
-                                def _clean_key(series):
-                                    s = series.astype(str).str.strip()
-                                    return s.mask(series.isna() | (s == "") | (s.str.lower() == "nan"), "(खाली/Blank)")
-
-                                _db["Degree (डिग्री)"] = _clean_key(_db[_dc]) if _dc else "—"
-                                _db["Branch (ब्रांच)"] = _clean_key(_db[_bc]) if _bc else "—"
-                                _db["Subject (विषय)"] = _clean_key(_db[_c_col])
-
-                                _deg_options = ["सभी डिग्री"] + sorted(_db["Degree (डिग्री)"].unique().tolist())
-                                _deg_pick = st.selectbox(
-                                    "डिग्री फ़िल्टर:",
-                                    _deg_options,
-                                    key=f"db_deg_filter_{deg_info['display']}_{_c_rk}"
-                                )
-                                if _deg_pick != "सभी डिग्री":
-                                    _db = _db[_db["Degree (डिग्री)"] == _deg_pick]
-
-                                db_summary = (
-                                    _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)", "Subject (विषय)"])["_wrong"]
-                                    .agg(["size", "sum"]).reset_index()
-                                )
-                                db_summary.columns = ["Degree (डिग्री)", "Branch (ब्रांच)", "Subject (विषय)", "छात्रों की संख्या (Count)", "🔴 गलत (Wrong)"]
-                                db_summary["🔴 गलत (Wrong)"] = db_summary["🔴 गलत (Wrong)"].astype(int)
-                                db_summary = db_summary.sort_values(
-                                    ["Degree (डिग्री)", "Branch (ब्रांच)", "छात्रों की संख्या (Count)"],
-                                    ascending=[True, True, False]
-                                ).reset_index(drop=True)
-
-                                def _db_row_styler(row):
-                                    if row["🔴 गलत (Wrong)"] > 0:
-                                        return ['background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'] * len(row)
-                                    return [''] * len(row)
-
-                                dm1, dm2 = st.columns(2)
-                                with dm1:
-                                    st.metric("📚 कुल डिग्री+ब्रांच+विषय कॉम्बिनेशन", len(db_summary))
-                                with dm2:
-                                    st.metric("🔴 गलत कॉम्बिनेशन", int((db_summary["🔴 गलत (Wrong)"] > 0).sum()))
-
-                                st.dataframe(
-                                    db_summary.style.apply(_db_row_styler, axis=1),
-                                    hide_index=True,
-                                    use_container_width=True,
-                                    height=min(38 * (len(db_summary) + 1) + 3, 650)
-                                )
-                                st.download_button(
-                                    label="📥 यह समरी CSV में डाउनलोड करें",
-                                    data=db_summary.to_csv(index=False).encode("utf-8"),
-                                    file_name=f"{deg_info['display']}_Degree_Branch_{_c_rk}_Summary.csv",
-                                    mime="text/csv",
-                                    key=f"db_dl_{deg_info['display']}_{_c_rk}"
-                                )
                         else:
                             st.caption("इस श्रेणी में कोई डेटा उपलब्ध नहीं है।")
                     else:
                         st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
+
+                    # ---------------------------------------------------------------------
+                    # 🎓 केवल UG / PG टैब: डिग्री + ब्रांच-वाइज समरी (चुनी हुई श्रेणी के लिए)
+                    # ---------------------------------------------------------------------
+                    if _scope:
+                        st.divider()
+                        st.markdown(f"### 🎓 डिग्री + ब्रांच-वाइज समरी — {selected_category}")
+                        st.caption("हर डिग्री और ब्रांच के सामने कि किस विषय में कितने छात्र हैं। 🔵 नीली रो = डेटा खाली है | 🔴 लाल रो = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)।")
+
+                        _db = df_deg_filtered.copy()
+
+                        # डिग्री / ब्रांच कॉलम इसी टैब के अपने डेटा से पहचानना (PG के कॉलम नाम अलग हो सकते हैं)
+                        _dc = deg_col if (deg_col and deg_col in _db.columns) else next(
+                            (c for c in _db.columns if any(k in str(c).lower() for k in ['deg', 'course', 'class'])), None)
+                        _skip_kw = ['minor', 'mdc', 'voc', 'skill', 'pw', 'project']
+                        _bc = br_col if (br_col and br_col in _db.columns and br_col != _dc) else None
+                        if _bc is None:
+                            _bc = next((c for c in _db.columns if c != _dc and any(k in str(c).lower() for k in ['branch', 'stream'])), None)
+                        if _bc is None:
+                            _bc = next((c for c in _db.columns if c != _dc and 'subject' in str(c).lower()
+                                        and not any(k in str(c).lower() for k in _skip_kw)), None)
+
+                        def _clean_key(series):
+                            s_ = series.astype(str).str.strip()
+                            return s_.mask(series.isna() | (s_ == "") | (s_.str.lower() == "nan"), "(खाली/Blank)")
+
+                        _db["Degree (डिग्री)"] = _clean_key(_db[_dc]) if _dc else "—"
+                        _db["Branch (ब्रांच)"] = _clean_key(_db[_bc]) if _bc else "—"
+
+                        _c_col = current_cat["col_name"] if (current_cat["col_name"] and current_cat["col_name"] in _db.columns) else None
+                        _c_rk = current_cat["rule_key"]
+
+                        _deg_options = ["सभी डिग्री"] + sorted(_db["Degree (डिग्री)"].unique().tolist())
+                        _deg_pick = st.selectbox(
+                            "डिग्री फ़िल्टर:",
+                            _deg_options,
+                            key=f"db_deg_filter_{deg_info['display']}_{_c_rk}"
+                        )
+                        if _deg_pick != "सभी डिग्री":
+                            _db = _db[_db["Degree (डिग्री)"] == _deg_pick]
+
+                        _red = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'
+                        _blue = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
+
+                        if _c_col:
+                            def _wrong_flag_db(r):
+                                v = r[_c_col]
+                                if pd.isna(v) or str(v).strip() == "":
+                                    return False
+                                vs = {_norm_txt(x) for x in _rules_for_row(r).get(_c_rk, [])}
+                                return bool(vs) and (_norm_txt(v) not in vs)
+
+                            _db["_wrong"] = _db.apply(_wrong_flag_db, axis=1)
+                            _db["Subject (विषय)"] = _clean_key(_db[_c_col])
+
+                            db_summary = (
+                                _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)", "Subject (विषय)"])["_wrong"]
+                                .agg(["size", "sum"]).reset_index()
+                            )
+                            db_summary.columns = ["Degree (डिग्री)", "Branch (ब्रांच)", "Subject (विषय)", "छात्रों की संख्या (Count)", "🔴 गलत (Wrong)"]
+                            db_summary["🔴 गलत (Wrong)"] = db_summary["🔴 गलत (Wrong)"].astype(int)
+                            db_summary = db_summary.sort_values(
+                                ["Degree (डिग्री)", "Branch (ब्रांच)", "छात्रों की संख्या (Count)"],
+                                ascending=[True, True, False]
+                            ).reset_index(drop=True)
+
+                            def _db_row_styler(row):
+                                if row["🔴 गलत (Wrong)"] > 0:
+                                    return [_red] * len(row)
+                                if row["Subject (विषय)"] == "(खाली/Blank)":
+                                    return [_blue] * len(row)
+                                return [''] * len(row)
+
+                            dm1, dm2 = st.columns(2)
+                            with dm1:
+                                st.metric("📚 कुल डिग्री+ब्रांच+विषय कॉम्बिनेशन", len(db_summary))
+                            with dm2:
+                                st.metric("🔴 गलत कॉम्बिनेशन", int((db_summary["🔴 गलत (Wrong)"] > 0).sum()))
+
+                            st.dataframe(
+                                db_summary.style.apply(_db_row_styler, axis=1),
+                                hide_index=True,
+                                use_container_width=True,
+                                height=min(38 * (len(db_summary) + 1) + 3, 650)
+                            )
+                        else:
+                            # इस श्रेणी का कॉलम इस डेटा में नहीं है (जैसे PG में Minor/MDC) — तब भी डिग्री+ब्रांच की गिनती दिखाना
+                            st.info(f"ℹ️ इस डेटा में '{selected_category}' का कॉलम नहीं मिला, इसलिए नीचे सिर्फ डिग्री + ब्रांच के हिसाब से छात्रों की कुल संख्या दिखाई जा रही है।")
+                            st.caption("इस डेटा में उपलब्ध कॉलम: " + ", ".join(str(c) for c in df_deg_filtered.columns))
+                            db_summary = (
+                                _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]).size().reset_index(name="कुल छात्र (Total)")
+                                .sort_values(["Degree (डिग्री)", "कुल छात्र (Total)"], ascending=[True, False]).reset_index(drop=True)
+                            )
+                            dm1, dm2 = st.columns(2)
+                            with dm1:
+                                st.metric("🎓 कुल डिग्री+ब्रांच कॉम्बिनेशन", len(db_summary))
+                            with dm2:
+                                st.metric("👥 कुल छात्र", int(db_summary["कुल छात्र (Total)"].sum()))
+                            st.dataframe(
+                                db_summary,
+                                hide_index=True,
+                                use_container_width=True,
+                                height=min(38 * (len(db_summary) + 1) + 3, 650)
+                            )
+
+                        st.download_button(
+                            label="📥 यह समरी CSV में डाउनलोड करें",
+                            data=db_summary.to_csv(index=False).encode("utf-8"),
+                            file_name=f"{deg_info['display']}_Degree_Branch_{_c_rk}_Summary.csv",
+                            mime="text/csv",
+                            key=f"db_dl_{deg_info['display']}_{_c_rk}"
+                        )
 
                 # -------------------------------------------------------------------------
                 # 📋 केवल भाग 2 (छात्रों की विस्तृत लिस्ट) - 1 से शुरू होने वाला सीरियल नंबर फिक्स
