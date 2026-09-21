@@ -208,6 +208,156 @@ st.markdown("""
         padding: 8px 14px;
         margin: 2px 0 6px 0;
     }
+
+    /* ============== ✨ प्रीमियम बटन डिज़ाइन (सभी बटन) ============== */
+    div.stButton > button,
+    div.stDownloadButton > button,
+    div[data-testid="stFormSubmitButton"] > button {
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: 14.5px;
+        letter-spacing: .2px;
+        min-height: 44px;
+        padding: .5rem 1.1rem;
+        transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease, filter .15s ease;
+    }
+    /* सामान्य बटन: सफ़ेद कार्ड जैसा, हल्का शैडो */
+    div.stButton > button:not([kind="primary"]) {
+        background: linear-gradient(180deg, #ffffff, #f3f6fc);
+        color: #1a3c6e;
+        border: 1.5px solid #cfd9ea;
+        box-shadow: 0 1px 2px rgba(26, 60, 110, .08);
+    }
+    div.stButton > button:not([kind="primary"]):hover {
+        transform: translateY(-2px);
+        border-color: #1a73e8;
+        color: #1a73e8;
+        background: linear-gradient(180deg, #ffffff, #e9f1ff);
+        box-shadow: 0 8px 18px rgba(26, 115, 232, .18);
+    }
+    /* प्राइमरी बटन: नीला-जामुनी ग्रेडिएंट */
+    div.stButton > button[kind="primary"],
+    div[data-testid="stFormSubmitButton"] > button[kind="primary"],
+    div[data-testid="stFormSubmitButton"] > button {
+        background: linear-gradient(135deg, #1a73e8, #5b4bdb);
+        color: #ffffff;
+        border: none;
+        box-shadow: 0 5px 16px rgba(91, 75, 219, .35);
+    }
+    div.stButton > button[kind="primary"] p,
+    div[data-testid="stFormSubmitButton"] > button p { color: #ffffff; }
+    div.stButton > button[kind="primary"]:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.08);
+        color: #ffffff;
+        box-shadow: 0 10px 22px rgba(91, 75, 219, .42);
+    }
+    div.stButton > button:active,
+    div.stDownloadButton > button:active,
+    div[data-testid="stFormSubmitButton"] > button:active {
+        transform: translateY(0) scale(.98);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+    }
+    div.stButton > button:focus-visible,
+    div.stDownloadButton > button:focus-visible {
+        outline: 3px solid rgba(26, 115, 232, .35);
+        outline-offset: 2px;
+    }
+    /* डाउनलोड बटन: हरा ग्रेडिएंट */
+    div.stDownloadButton > button {
+        background: linear-gradient(135deg, #22b573, #0b8f52);
+        color: #ffffff;
+        border: none;
+        box-shadow: 0 5px 16px rgba(15, 157, 88, .32);
+    }
+    div.stDownloadButton > button p { color: #ffffff; }
+    div.stDownloadButton > button:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.07);
+        color: #ffffff;
+        background: linear-gradient(135deg, #22b573, #0b8f52);
+        box-shadow: 0 10px 22px rgba(15, 157, 88, .42);
+    }
+    /* समरी का CSV बटन: आउटलाइन स्टाइल (XLSX हरे भरे बटन से अलग पहचान) */
+    div[class*="st-key-db_dl_"]:not([class*="st-key-db_dl_xlsx_"]) button {
+        background: #ffffff !important;
+        border: 1.8px solid #0f9d58 !important;
+        box-shadow: none !important;
+    }
+    div[class*="st-key-db_dl_"]:not([class*="st-key-db_dl_xlsx_"]) button,
+    div[class*="st-key-db_dl_"]:not([class*="st-key-db_dl_xlsx_"]) button p {
+        color: #0b7a4b !important;
+    }
+    div[class*="st-key-db_dl_"]:not([class*="st-key-db_dl_xlsx_"]) button:hover {
+        background: #eafaf2 !important;
+        box-shadow: 0 8px 18px rgba(15, 157, 88, .22) !important;
+    }
+
+    /* ============== 🧩 फ़िल्टर / इनपुट / टैब / मेट्रिक पॉलिश ============== */
+    div[data-baseweb="select"] > div {
+        border-radius: 10px;
+        border-color: #cfd9ea;
+        transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    div[data-baseweb="select"] > div:hover { border-color: #1a73e8; }
+    div[data-baseweb="select"] > div:focus-within {
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 3px rgba(26, 115, 232, .18);
+    }
+    div[data-testid="stTextInput"] input {
+        border-radius: 10px;
+    }
+    div[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {
+        box-shadow: 0 0 0 3px rgba(26, 115, 232, .18);
+        border-radius: 10px;
+    }
+    button[data-baseweb="tab"] {
+        border-radius: 10px 10px 0 0;
+        padding: 10px 16px;
+        transition: background .15s ease, color .15s ease;
+    }
+    button[data-baseweb="tab"]:hover { background: #eef4ff; }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(180deg, #eaf2ff, #ffffff);
+        color: #1a73e8;
+    }
+    div[data-testid="stMetric"] {
+        border-left: 5px solid #1a73e8;
+        box-shadow: 0 2px 8px rgba(26, 60, 110, .07);
+        transition: transform .15s ease, box-shadow .15s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 18px rgba(26, 60, 110, .13);
+    }
+
+    /* ============== 🎓 डिग्री+ब्रांच समरी: बैनर + डाउनलोड पैनल ============== */
+    .sum-banner {
+        background: linear-gradient(135deg, #1a3c6e, #2f5fb3 60%, #5b4bdb);
+        color: #ffffff;
+        border-radius: 14px;
+        padding: 14px 20px;
+        margin: 4px 0 10px 0;
+        box-shadow: 0 8px 22px rgba(26, 60, 110, .25);
+        animation: floatIn .5s ease-out;
+    }
+    .sum-banner .t { font-size: 20px; font-weight: 800; letter-spacing: -.2px; }
+    .dl-panel-head {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        margin: 18px 0 6px 0;
+    }
+    .dl-panel-head .h { font-size: 17px; font-weight: 800; color: #1a3c6e; }
+    .dl-chip {
+        font-size: 12.5px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
+        border: 1px solid #dde4f5; background: #f3f6fc; color: #3b4c73;
+    }
+    .dl-chip.red { background: #fdecee; border-color: #f5c2c7; color: #a61e2b; }
+    .dl-hint {
+        background: #f8fafc; border: 1px solid #e3e8ef; border-left: 4px solid #0f9d58;
+        border-radius: 10px; padding: 8px 14px; margin-bottom: 10px;
+        color: #55607a; font-size: 13px; line-height: 1.6;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -2008,7 +2158,10 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                     # ---------------------------------------------------------------------
                     if _scope:
                         st.divider()
-                        st.markdown("### 🎓 डिग्री + ब्रांच-वाइज समरी — Minor + MDC + Voc + PW (सभी एक साथ)")
+                        st.markdown(
+                            '<div class="sum-banner"><div class="t">🎓 डिग्री + ब्रांच-वाइज समरी — Minor + MDC + Voc + PW (सभी एक साथ)</div></div>',
+                            unsafe_allow_html=True
+                        )
                         st.caption("हर डिग्री और ब्रांच के सामने कुल छात्र, और Minor / MDC / Vocational / Project-PW हर श्रेणी में कितने सही (✅), गलत (🔴) और खाली (🔵) हैं। 🔴 लाल सेल = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय | 🔵 नीला सेल = डेटा खाली है (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)। 📝 कारण कॉलम में हर श्रेणी का पूरा कारण लिखा आता है।")
 
                         _db = df_deg_filtered.copy()
@@ -2223,10 +2376,24 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 height=min(38 * (len(db_summary) + 1) + 3, 650)
                             )
 
+                        # 📥 डाउनलोड पैनल (CSV + 2-शीट Excel)
+                        _n_reason_stu = 0 if students_df is None else len(students_df)
+                        _chips = f'<span class="dl-chip">📑 {len(db_summary) - 1 if len(db_summary) > 1 else len(db_summary)} डिग्री+ब्रांच रो</span>'
+                        if students_df is not None:
+                            _chips += f'<span class="dl-chip red">👥 Reason वाले छात्र: {_n_reason_stu}</span>'
+                        st.markdown(
+                            f'<div class="dl-panel-head"><span class="h">📥 समरी डाउनलोड करें</span>{_chips}</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.markdown(
+                            '<div class="dl-hint">📄 <b>CSV</b> — सिर्फ़ यह समरी टेबल (Total रो सहित)<br>'
+                            '📊 <b>Excel</b> — रंगीन, <b>2 शीट</b>: शीट 1 = समरी, शीट 2 = Reason वाले छात्रों की पूरी लिस्ट</div>',
+                            unsafe_allow_html=True
+                        )
                         _dl1, _dl2 = st.columns(2)
                         with _dl1:
                             st.download_button(
-                                label="📥 यह समरी CSV में डाउनलोड करें",
+                                label="📄  CSV डाउनलोड  (सिर्फ़ समरी)",
                                 data=db_summary.to_csv(index=False).encode("utf-8-sig"),
                                 file_name=f"{deg_info['display']}_Degree_Branch_All_Categories_Summary.csv",
                                 mime="text/csv",
@@ -2235,7 +2402,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             )
                         with _dl2:
                             st.download_button(
-                                label="📊 यह समरी Excel (XLSX) में डाउनलोड करें (रंगीन • 2 शीट: समरी + Reason वाले छात्र)",
+                                label="📊  Excel डाउनलोड  (2 शीट: समरी + Reason वाले छात्र)",
                                 data=generate_summary_excel_bytes(
                                     db_summary,
                                     sheet_name=f"{deg_info['display']}_Summary",
