@@ -1078,6 +1078,66 @@ def excel_bytes_to_csv_bytes(raw, sheet_name=0):
     return df_in.to_csv(index=False).encode("utf-8-sig"), len(df_in)
 
 # =========================================================================
+# 📊 डिग्री+ब्रांच समरी → रंगीन Excel (लाल/नीली रो + कारण कॉलम)
+# =========================================================================
+def generate_summary_excel_bytes(summary_df, sheet_name="Summary"):
+    from openpyxl.styles import PatternFill, Border, Side, Font, Alignment
+    from openpyxl.utils import get_column_letter
+
+    safe_sheet = "".join(ch for ch in str(sheet_name) if ch not in '[]:*?/\\')[:31] or "Summary"
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, index=False, sheet_name=safe_sheet)
+        ws = writer.sheets[safe_sheet]
+
+        thin = Side(style="thin", color="BFBFBF")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        red_fill = PatternFill("solid", start_color="F8D7DA", end_color="F8D7DA")
+        blue_fill = PatternFill("solid", start_color="D1ECF1", end_color="D1ECF1")
+        head_fill = PatternFill("solid", start_color="1A3C6E", end_color="1A3C6E")
+
+        cols = list(summary_df.columns)
+        wrong_idx = next((i for i, c in enumerate(cols) if "Wrong" in str(c)), None)
+        blank_idx = next((i for i, c in enumerate(cols) if "Blank" in str(c)), None)
+        reason_idx = next((i for i, c in enumerate(cols) if "Reason" in str(c)), None)
+
+        # हेडर
+        for c_i in range(1, len(cols) + 1):
+            cell = ws.cell(row=1, column=c_i)
+            cell.fill = head_fill
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+
+        # डेटा रो: गलत > 0 = लाल, खाली > 0 = नीली
+        for r_i, (_, row) in enumerate(summary_df.iterrows(), start=2):
+            fill, fcolor = None, "000000"
+            if wrong_idx is not None and row.iloc[wrong_idx] > 0:
+                fill, fcolor = red_fill, "721C24"
+            elif blank_idx is not None and row.iloc[blank_idx] > 0:
+                fill, fcolor = blue_fill, "0C5460"
+            for c_i in range(1, len(cols) + 1):
+                cell = ws.cell(row=r_i, column=c_i)
+                cell.border = border
+                cell.alignment = Alignment(vertical="top", wrap_text=(reason_idx is not None and c_i - 1 == reason_idx))
+                if fill is not None:
+                    cell.fill = fill
+                    cell.font = Font(bold=True, color=fcolor)
+
+        # कॉलम चौड़ाई (कारण कॉलम चौड़ा + टेक्स्ट रैप)
+        for c_i, name in enumerate(cols):
+            if c_i == reason_idx:
+                width = 90
+            else:
+                longest = max([len(str(name))] + [len(str(v)) for v in summary_df.iloc[:, c_i].tolist()])
+                width = min(max(longest + 3, 12), 40)
+            ws.column_dimensions[get_column_letter(c_i + 1)].width = width
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+    return output.getvalue()
+
+# =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
 # =========================================================================
 if active_panel == "📥 1. Entry / Upload Panel":
@@ -1765,13 +1825,25 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 height=min(38 * (len(db_summary) + 1) + 3, 650)
                             )
 
-                        st.download_button(
-                            label="📥 यह समरी CSV में डाउनलोड करें",
-                            data=db_summary.to_csv(index=False).encode("utf-8"),
-                            file_name=f"{deg_info['display']}_Degree_Branch_{_c_rk}_Summary.csv",
-                            mime="text/csv",
-                            key=f"db_dl_{deg_info['display']}_{_c_rk}"
-                        )
+                        _dl1, _dl2 = st.columns(2)
+                        with _dl1:
+                            st.download_button(
+                                label="📥 यह समरी CSV में डाउनलोड करें",
+                                data=db_summary.to_csv(index=False).encode("utf-8-sig"),
+                                file_name=f"{deg_info['display']}_Degree_Branch_{_c_rk}_Summary.csv",
+                                mime="text/csv",
+                                key=f"db_dl_{deg_info['display']}_{_c_rk}",
+                                use_container_width=True
+                            )
+                        with _dl2:
+                            st.download_button(
+                                label="📊 यह समरी Excel (XLSX) में डाउनलोड करें (रंगीन)",
+                                data=generate_summary_excel_bytes(db_summary, sheet_name=f"{deg_info['display']}_{_c_rk}"),
+                                file_name=f"{deg_info['display']}_Degree_Branch_{_c_rk}_Summary.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"db_dl_xlsx_{deg_info['display']}_{_c_rk}",
+                                use_container_width=True
+                            )
 
                 # -------------------------------------------------------------------------
                 # 📋 केवल भाग 2 (छात्रों की विस्तृत लिस्ट) - 1 से शुरू होने वाला सीरियल नंबर फिक्स
