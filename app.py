@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import json
+import io
+import os
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="NEP Master Data System", page_icon="🎓", layout="wide")
@@ -920,6 +922,47 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
                 st.rerun()
 
 # =========================================================================
+# 🔄 Excel (.xls / .xlsx) → CSV कन्वर्टर (Panel 1 के लिए)
+# =========================================================================
+def get_excel_sheet_names(uploaded_file):
+    """Excel फ़ाइल की शीट्स के नाम लौटाता है (न पढ़ पाए तो खाली लिस्ट)।"""
+    try:
+        uploaded_file.seek(0)
+        names = pd.ExcelFile(uploaded_file).sheet_names
+    except Exception:
+        names = []
+    uploaded_file.seek(0)
+    return names
+
+def excel_to_dataframe(uploaded_file, sheet_name=0):
+    """Excel फ़ाइल को DataFrame में पढ़ता है। कई पोर्टल .xls नाम से असल में
+    HTML/टेक्स्ट फ़ाइल देते हैं, उसके लिए फ़ॉलबैक भी है।"""
+    uploaded_file.seek(0)
+    try:
+        return pd.read_excel(uploaded_file, sheet_name=sheet_name)
+    except Exception as first_err:
+        raw = uploaded_file.getvalue()
+        # असली xls (OLE) या xlsx (ZIP) है तो फ़ॉलबैक का मतलब नहीं — असली एरर दिखाएँ
+        if raw[:4] == b"\xd0\xcf\x11\xe0" or raw[:2] == b"PK":
+            raise first_err
+        try:
+            try:
+                html_text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                html_text = raw.decode("cp1252", errors="replace")
+            return pd.read_html(io.StringIO(html_text))[0]
+        except Exception:
+            pass
+        try:
+            return pd.read_csv(io.BytesIO(raw), sep=None, engine="python", encoding="utf-8-sig")
+        except Exception:
+            raise first_err
+
+def dataframe_to_csv_bytes(df_in):
+    """DataFrame → CSV bytes (utf-8-sig ताकि हिंदी टेक्स्ट Excel में भी सही खुले)।"""
+    return df_in.to_csv(index=False).encode("utf-8-sig")
+
+# =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
 # =========================================================================
 if active_panel == "📥 1. Entry / Upload Panel":
@@ -931,11 +974,29 @@ if active_panel == "📥 1. Entry / Upload Panel":
     st.write("यहाँ अपनी मुख्य एक्सेल/CSV फ़ाइल अपलोड करें। यह डेटा सीधे समीक्षा और क्लीनिंग के लिए **Work / Approve Panel (P2)** में ट्रांसफर हो जाएगा।")
     
     # एक्सेल या सीएसवी फ़ाइल अपलोड करने का विकल्प
-    f = st.file_uploader("अपनी फ़ाइल अपलोड करें", type=["csv", "xlsx"])
+    f = st.file_uploader("अपनी फ़ाइल अपलोड करें (CSV / XLS / XLSX)", type=["csv", "xls", "xlsx"])
     if f:
         try:
-            # फ़ाइल टाइप के अनुसार डेटाबेस में रीड करना (Pandas Dataframe)
-            df = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
+            if f.name.lower().endswith((".xls", ".xlsx")):
+                # 🔄 Excel फ़ाइल → पहले CSV में कन्वर्ट, फिर बिल्कुल CSV की तरह ही आगे प्रोसेस
+                sheet_names = get_excel_sheet_names(f)
+                sheet_choice = 0
+                if len(sheet_names) > 1:
+                    sheet_choice = st.selectbox("📑 कौन सी शीट लोड करनी है?", sheet_names, key="p1_sheet_select")
+                df_excel = excel_to_dataframe(f, sheet_choice)
+                csv_bytes = dataframe_to_csv_bytes(df_excel)
+                st.info(f"🔄 Excel फ़ाइल '{f.name}' अपने-आप CSV में बदल दी गई ({len(df_excel)} रोज़)।")
+                st.download_button(
+                    "📥 बदली हुई CSV फ़ाइल डाउनलोड करें (ज़रूरत हो तो)",
+                    data=csv_bytes,
+                    file_name=os.path.splitext(f.name)[0] + ".csv",
+                    mime="text/csv",
+                    key="p1_converted_csv_dl"
+                )
+                # CSV से वापस पढ़ना, ताकि डेटा बिल्कुल CSV अपलोड जैसा ही बर्ताव करे
+                df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
+            else:
+                df = pd.read_csv(f)
             st.success(f"🎉 फ़ाइल सफलतापूर्वक लोड हो गई ({len(df)} रोज़)!")
             
             # डेटा को P2 में ट्रांसफर करने का बटन
