@@ -358,6 +358,157 @@ st.markdown("""
         border-radius: 10px; padding: 8px 14px; margin-bottom: 10px;
         color: #55607a; font-size: 13px; line-height: 1.6;
     }
+
+    /* ============== 🎯 अर्थ के हिसाब से बटन रंग (पूरे कोड में) ============== */
+    /* 🔴 डिलीट / रीसेट / Revoke = लाल */
+    div[class*="st-key-danger_"] button,
+    div[class*="st-key-revoke_btn_"] button {
+        background: linear-gradient(135deg, #ff6a5c, #d92d3a) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 5px 16px rgba(217, 45, 58, .32) !important;
+    }
+    div[class*="st-key-danger_"] button p,
+    div[class*="st-key-revoke_btn_"] button p { color: #ffffff !important; }
+    div[class*="st-key-danger_"] button:hover,
+    div[class*="st-key-revoke_btn_"] button:hover {
+        box-shadow: 0 10px 22px rgba(217, 45, 58, .42) !important;
+        filter: brightness(1.07);
+    }
+    /* ✅ Approve = हरा */
+    div[class*="st-key-approve_"] button {
+        background: linear-gradient(135deg, #2bc07a, #0b8f52) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 5px 16px rgba(15, 157, 88, .32) !important;
+    }
+    div[class*="st-key-approve_"] button p { color: #ffffff !important; }
+    div[class*="st-key-approve_"] button:hover {
+        box-shadow: 0 10px 22px rgba(15, 157, 88, .42) !important;
+        filter: brightness(1.07);
+    }
+    /* 💾 Save = आसमानी-नीला */
+    div[class*="st-key-save_"] button,
+    div[class*="st-key-blank_exempt_save_"] button {
+        background: linear-gradient(135deg, #0ea5e9, #2563eb) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 5px 16px rgba(37, 99, 235, .32) !important;
+    }
+    div[class*="st-key-save_"] button p,
+    div[class*="st-key-blank_exempt_save_"] button p { color: #ffffff !important; }
+    div[class*="st-key-save_"] button:hover,
+    div[class*="st-key-blank_exempt_save_"] button:hover {
+        box-shadow: 0 10px 22px rgba(37, 99, 235, .42) !important;
+        filter: brightness(1.07);
+    }
+    /* 🔒 Lock = सुनहरा */
+    div[class*="st-key-lock_"] button {
+        background: linear-gradient(135deg, #f7b731, #e08a00) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 5px 16px rgba(224, 138, 0, .32) !important;
+    }
+    div[class*="st-key-lock_"] button p { color: #ffffff !important; }
+    div[class*="st-key-lock_"] button:hover {
+        box-shadow: 0 10px 22px rgba(224, 138, 0, .42) !important;
+        filter: brightness(1.07);
+    }
+    /* 🔓 Logout = लाल आउटलाइन */
+    div[class*="st-key-logout_btn"] button {
+        background: #ffffff !important;
+        border: 1.8px solid #e57373 !important;
+        box-shadow: none !important;
+    }
+    div[class*="st-key-logout_btn"] button,
+    div[class*="st-key-logout_btn"] button p { color: #c62828 !important; }
+    div[class*="st-key-logout_btn"] button:hover {
+        background: #fdecee !important;
+        box-shadow: 0 8px 18px rgba(198, 40, 40, .2) !important;
+    }
+    /* बंद (disabled) बटन */
+    div.stButton > button:disabled,
+    div.stDownloadButton > button:disabled {
+        opacity: .5 !important;
+        cursor: not-allowed !important;
+        transform: none !important;
+        box-shadow: none !important;
+        filter: grayscale(.4);
+    }
+
+    /* ============== 🔘 रेडियो = पिल (गोली) स्विच ============== */
+    div[data-testid="stRadio"] div[role="radiogroup"] { gap: 8px; flex-wrap: wrap; }
+    div[data-testid="stRadio"] div[role="radiogroup"] > label {
+        background: #f3f6fc;
+        border: 1.5px solid #cfd9ea;
+        border-radius: 999px;
+        padding: 7px 18px;
+        margin: 0;
+        cursor: pointer;
+        transition: all .15s ease;
+    }
+    div[data-testid="stRadio"] div[role="radiogroup"] > label > div:first-of-type { display: none; }
+    div[data-testid="stRadio"] div[role="radiogroup"] > label:hover {
+        border-color: #1a73e8;
+        background: #e9f1ff;
+        transform: translateY(-1px);
+    }
+    div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) {
+        background: linear-gradient(135deg, #1a73e8, #5b4bdb);
+        border-color: transparent;
+        box-shadow: 0 5px 14px rgba(91, 75, 219, .32);
+    }
+    div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked),
+    div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) * {
+        color: #ffffff !important;
+        font-weight: 700;
+    }
+
+    /* ============== ☑️ चेकबॉक्स / एक्सपैंडर / टैग / अपलोडर ============== */
+    div[data-testid="stCheckbox"] label {
+        padding: 6px 12px;
+        border-radius: 10px;
+        transition: background .15s ease;
+    }
+    div[data-testid="stCheckbox"] label:hover { background: #eef4ff; }
+    div[data-testid="stExpander"] summary {
+        font-weight: 700;
+        border-radius: 10px;
+        transition: background .15s ease;
+    }
+    div[data-testid="stExpander"] summary:hover { background: #f3f6fc; }
+    span[data-baseweb="tag"] {
+        background: linear-gradient(135deg, #1a73e8, #5b4bdb) !important;
+        border-radius: 999px !important;
+        color: #ffffff !important;
+        font-weight: 600;
+    }
+    span[data-baseweb="tag"] span, span[data-baseweb="tag"] svg { color: #ffffff !important; fill: #ffffff !important; }
+    section[data-testid="stFileUploaderDropzone"] {
+        border: 2px dashed #9db7e8;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #f8fbff, #eef4ff);
+        transition: all .15s ease;
+    }
+    section[data-testid="stFileUploaderDropzone"]:hover {
+        border-color: #1a73e8;
+        background: #e9f1ff;
+        box-shadow: 0 6px 18px rgba(26, 115, 232, .15);
+    }
+    section[data-testid="stFileUploaderDropzone"] button {
+        border-radius: 10px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #1a73e8, #5b4bdb);
+        color: #ffffff;
+        border: none;
+        box-shadow: 0 4px 12px rgba(91, 75, 219, .3);
+        transition: transform .15s ease, filter .15s ease;
+    }
+    section[data-testid="stFileUploaderDropzone"] button:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.08);
+        color: #ffffff;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -674,9 +825,24 @@ def render_print_button(df, title, button_label="🖨️ इस लिस्ट 
     """
     escaped_json = json.dumps(full_html)
     btn_html = f"""
-    <button id="printBtn_{key_suffix}" style="
-        background-color:#1a73e8; color:white; border:none; border-radius:8px;
-        padding:8px 16px; font-weight:600; cursor:pointer; font-size:14px;">
+    <style>
+        body {{ margin: 0; padding: 4px 2px; background: transparent; }}
+        .pbtn {{
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            background: linear-gradient(135deg, #1a73e8, #5b4bdb);
+            color: #ffffff; border: none; border-radius: 12px;
+            padding: 11px 22px; min-height: 44px; box-sizing: border-box;
+            font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+            font-weight: 700; font-size: 14.5px; letter-spacing: .2px;
+            cursor: pointer;
+            box-shadow: 0 5px 16px rgba(91, 75, 219, .35);
+            transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+        }}
+        .pbtn:hover {{ transform: translateY(-2px); filter: brightness(1.08); box-shadow: 0 10px 22px rgba(91, 75, 219, .42); }}
+        .pbtn:active {{ transform: translateY(0) scale(.98); box-shadow: 0 1px 4px rgba(0,0,0,.2); }}
+        .pbtn:focus-visible {{ outline: 3px solid rgba(26, 115, 232, .35); outline-offset: 2px; }}
+    </style>
+    <button id="printBtn_{key_suffix}" class="pbtn">
         {button_label}
     </button>
     <script>
@@ -690,7 +856,7 @@ def render_print_button(df, title, button_label="🖨️ इस लिस्ट 
         }};
     </script>
     """
-    components.html(btn_html, height=55)
+    components.html(btn_html, height=64)
 
 # Session States Management
 if "ok" not in st.session_state: st.session_state["ok"] = False
@@ -796,7 +962,7 @@ st.sidebar.markdown(
     """,
     unsafe_allow_html=True
 )
-if st.sidebar.button("🔓 Logout करें", use_container_width=True):
+if st.sidebar.button("🔓 Logout करें", use_container_width=True, key="logout_btn"):
     st.session_state["ok"] = False
     st.session_state.pop("panel", None)
     st.session_state.pop("panel_key", None)
@@ -1649,7 +1815,7 @@ if active_panel == "📥 1. Entry / Upload Panel":
             st.success(f"🎉 फ़ाइल सफलतापूर्वक लोड हो गई ({len(df)} रोज़)!")
             
             # डेटा को P2 में ट्रांसफर करने का बटन
-            if st.button("📤 वर्क/अप्रूवल पैनल (P2) में ट्रांसफर करें"):
+            if st.button("📤 वर्क/अप्रूवल पैनल (P2) में ट्रांसफर करें", key="transfer_p2_btn", type="primary"):
                 # पुराने किसी भी रॉ (Temporary) डेटा को साफ़ करना
                 cursor.execute("DELETE FROM raw_store")
                 
@@ -1690,7 +1856,7 @@ elif active_panel == "💻 2. Work / Approve Panel":
         
         cols_to_delete = st.multiselect("हटाने के लिए अनुपयोगी कॉलम चुनें:", options=active_cols)
         if cols_to_delete:
-            if st.button("🔴 चुने गए कॉलम हटाएं"):
+            if st.button("🔴 चुने गए कॉलम हटाएं", key="danger_delete_cols_btn"):
                 st.session_state["deleted_cols"].extend(cols_to_delete)
                 st.success("चयनित कॉलम स्क्रीन से हटा दिए गए!")
                 st.rerun()
@@ -1732,7 +1898,7 @@ elif active_panel == "💻 2. Work / Approve Panel":
             selected_branches = st.multiselect("डिलीट करने के लिए ब्रांच (Stream) चुनें:", options=unique_branches)
             
         if selected_degs or selected_branches:
-            if st.button("🗑️ चुनी हुई रोज़ हमेशा के लिए डिलीट करें"):
+            if st.button("🗑️ चुनी हुई रोज़ हमेशा के लिए डिलीट करें", key="danger_delete_rows_btn"):
                 filtered_rows = []
                 for _, row in raw_df.iterrows():
                     match_deg = str(row[deg_col]) in selected_degs if selected_degs else False
@@ -1782,7 +1948,7 @@ elif active_panel == "💻 2. Work / Approve Panel":
         st.subheader("🚀 FINAL ACTION")
         st.write("📈 **डेटा ट्रांसफर:** क्लीन और रीऑर्डर किए गए छात्रों के डेटा को आगे UG (P3) और PG (P4) पैनल में भेजने के लिए यह बटन दबाएँ।")
         
-        if st.button("✅ डेटा अप्रूव करें और पैनल्स में ट्रांसफर करें"):
+        if st.button("✅ डेटा अप्रूव करें और पैनल्स में ट्रांसफर करें", key="approve_transfer_all_btn"):
             if not df_ug_preview.empty:
                 ug_json_str = json.dumps(df_ug_preview[reordered_cols].to_dict(orient='records'))
                 cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (ug_json_str, "UG"))
@@ -2688,7 +2854,7 @@ elif active_panel == "⚙️ 6. Admin Panel":
 
             lc1, lc2 = st.columns(2)
             with lc1:
-                if st.button("💾 लोगो सेव करें", use_container_width=True, disabled=(uploaded_logo is None)):
+                if st.button("💾 लोगो सेव करें", use_container_width=True, disabled=(uploaded_logo is None), key="save_logo_btn"):
                     import base64 as _b64
                     logo_bytes = uploaded_logo.getvalue()
                     encoded = _b64.b64encode(logo_bytes).decode("utf-8")
@@ -2697,7 +2863,7 @@ elif active_panel == "⚙️ 6. Admin Panel":
                     st.success("🎉 लोगो सफलतापूर्वक सेव हो गया!")
                     st.rerun()
             with lc2:
-                if st.button("🗑️ लोगो हटाएं (इमोजी दिखाएं)", use_container_width=True, disabled=(not _current_logo)):
+                if st.button("🗑️ लोगो हटाएं (इमोजी दिखाएं)", use_container_width=True, disabled=(not _current_logo), key="danger_delete_logo_btn"):
                     delete_app_setting("login_logo_b64")
                     delete_app_setting("login_logo_mime")
                     st.success("लोगो हटा दिया गया, अब डिफ़ॉल्ट इमोजी दिखेगा।")
@@ -2847,7 +3013,7 @@ elif active_panel == "⚙️ 6. Admin Panel":
     if admin_section_toggle("danger", "🚨 डेंजर ज़ोन", None):
         confirm_reset = st.checkbox("मैं पूरे सिस्टम (रॉ + अप्रूव्ड दोनों डेटाबेस) को रीसेट करने की पुष्टि करता हूँ।")
         also_delete_rules = st.checkbox("⚠️ लॉक किए गए सब्जेक्ट नियम (Minor/MDC/Voc/PW रूल्स) भी डिलीट करें (सामान्यतः इसे टिक न करें)")
-        if st.button("💥 ऑल डेटाबेस रीसेट करें"):
+        if st.button("💥 ऑल डेटाबेस रीसेट करें", key="danger_reset_all_btn"):
             if confirm_reset:
                 cursor.execute("DELETE FROM raw_store")
                 cursor.execute("DELETE FROM perma_store")
