@@ -1951,6 +1951,117 @@ def excel_bytes_to_csv_bytes(raw, sheet_name=0):
     return df_in.to_csv(index=False).encode("utf-8-sig"), len(df_in)
 
 # =========================================================================
+# 📑 ब्रांच-वाइज विषय शीट: Degree/Branch/Total Admission मर्ज + Minor/MDC/Voc/PW नाम+काउंट
+# =========================================================================
+def build_branch_subject_blocks(df, deg_c, br_c, cats):
+    """cats = [(label, column_name), ...] -> हर Degree+Branch के लिए एक ब्लॉक"""
+    blocks = []
+    for (d_, b_), g_ in df.groupby([deg_c, br_c], sort=False):
+        cat_lists = []
+        for _lbl, _cn in cats:
+            s_ = g_[_cn].dropna().astype(str).str.strip()
+            s_ = s_[(s_ != "") & (s_.str.lower() != "nan")]
+            items_ = sorted(s_.value_counts().items(), key=lambda kv: (-kv[1], kv[0]))
+            cat_lists.append([(str(n_), int(c_)) for n_, c_ in items_])
+        n_rows = max([1] + [len(x_) for x_ in cat_lists])
+        blocks.append({"degree": d_, "branch": b_, "total": int(len(g_)), "cats": cat_lists, "n": n_rows})
+    blocks.sort(key=lambda x_: (str(x_["degree"]), -x_["total"], str(x_["branch"])))
+    return blocks
+
+
+def branch_subject_sheet_html(blocks, cat_labels):
+    """स्क्रीन पर दिखाने के लिए rowspan (मर्ज) वाली HTML तालिका"""
+    def _e(x):
+        return _html.escape(str(x)).replace("$", "&#36;")
+    th = "position:sticky;top:0;background:#1a3c6e;color:#fff;padding:8px 10px;border:1px solid #BFBFBF;text-align:center;font-size:13px;white-space:nowrap;z-index:2;"
+    h = ['<div style="max-height:650px;overflow:auto;border:1px solid #BFBFBF;border-radius:6px;">',
+         '<table style="border-collapse:collapse;width:100%;font-size:13.5px;color:#111;">', '<thead><tr>']
+    heads = ["Degree (डिग्री)", "Branch (ब्रांच)", "Total Admission"]
+    for l_ in cat_labels:
+        heads += [f"{l_} (विषय)", f"{l_} Count"]
+    for t_ in heads:
+        h.append(f'<th style="{th}">{_e(t_)}</th>')
+    h.append("</tr></thead><tbody>")
+    for bi, b_ in enumerate(blocks):
+        bg = "#EAF1FB" if bi % 2 == 0 else "#FFFFFF"
+        td = f"padding:6px 10px;border:1px solid #BFBFBF;background:{bg};"
+        for i in range(b_["n"]):
+            h.append("<tr>")
+            if i == 0:
+                rs = b_["n"]
+                h.append(f'<td rowspan="{rs}" style="{td}vertical-align:middle;text-align:center;font-weight:700;">{_e(b_["degree"])}</td>')
+                h.append(f'<td rowspan="{rs}" style="{td}vertical-align:middle;text-align:center;font-weight:700;">{_e(b_["branch"])}</td>')
+                h.append(f'<td rowspan="{rs}" style="{td}vertical-align:middle;text-align:center;font-weight:800;color:#1a3c6e;">{b_["total"]}</td>')
+            for items in b_["cats"]:
+                if i < len(items):
+                    h.append(f'<td style="{td}">{_e(items[i][0])}</td><td style="{td}text-align:center;">{items[i][1]}</td>')
+                else:
+                    h.append(f'<td style="{td}"></td><td style="{td}"></td>')
+            h.append("</tr>")
+    h.append("</tbody></table></div>")
+    return "".join(h)
+
+
+def generate_branch_subject_sheet_excel_bytes(blocks, cat_labels, sheet_name="Branch_Subject_Sheet"):
+    """असली merged cells वाली Excel शीट"""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Border, Side, Font, Alignment
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "".join(ch for ch in str(sheet_name) if ch not in '[]:*?/\\')[:31] or "Sheet1"
+
+    thin = Side(style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    head_fill = PatternFill("solid", start_color="1A3C6E", end_color="1A3C6E")
+    band_a = PatternFill("solid", start_color="EAF1FB", end_color="EAF1FB")
+    band_b = PatternFill("solid", start_color="FFFFFF", end_color="FFFFFF")
+
+    headers = ["Degree (डिग्री)", "Branch (ब्रांच)", "Total Admission"]
+    for l_ in cat_labels:
+        headers += [f"{l_} (विषय)", f"{l_} Count"]
+    ncols = len(headers)
+
+    for c_i, t_ in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=c_i, value=t_)
+        cell.fill = head_fill
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+
+    r = 2
+    for bi, b_ in enumerate(blocks):
+        start, end = r, r + b_["n"] - 1
+        fill = band_a if bi % 2 == 0 else band_b
+        for rr in range(start, end + 1):
+            for cc in range(1, ncols + 1):
+                cell = ws.cell(row=rr, column=cc)
+                cell.fill = fill
+                cell.border = border
+        for cc, val in ((1, b_["degree"]), (2, b_["branch"]), (3, b_["total"])):
+            cell = ws.cell(row=start, column=cc, value=val)
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            if end > start:
+                ws.merge_cells(start_row=start, start_column=cc, end_row=end, end_column=cc)
+        for k, items in enumerate(b_["cats"]):
+            for i, (name_, cnt_) in enumerate(items):
+                ws.cell(row=start + i, column=4 + 2 * k, value=name_).alignment = Alignment(vertical="center", wrap_text=True)
+                ws.cell(row=start + i, column=5 + 2 * k, value=cnt_).alignment = Alignment(horizontal="center", vertical="center")
+        r = end + 1
+
+    widths = [22, 28, 16] + [34, 12] * len(cat_labels)
+    for c_i, w_ in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(c_i)].width = w_
+    ws.freeze_panes = "A2"
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+# =========================================================================
 # 📊 डिग्री+ब्रांच समरी → रंगीन Excel (लाल/नीली रो + कारण कॉलम)
 # =========================================================================
 def generate_summary_excel_bytes(summary_df, sheet_name="Summary", students_df=None, student_flags=None, students_sheet_name="Reason_Students"):
@@ -2907,6 +3018,30 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 file_name=f"{deg_info['display']}_Degree_Branch_All_Categories_Summary.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 key=f"db_dl_xlsx_{deg_info['display']}_all",
+                                use_container_width=True
+                            )
+
+                        # ---------------------------------------------------------------------
+                        # 📑 ब्रांच-वाइज विषय शीट: Degree/Branch/Total Admission मर्ज,
+                        # नीचे हर रो में Minor / MDC / Voc / PW के अलग-अलग नाम + count
+                        # ---------------------------------------------------------------------
+                        if _present_cats:
+                            st.divider()
+                            st.markdown(
+                                '<div class="sum-banner"><div class="t">📑 ब्रांच-वाइज विषय शीट — Total Admission + Minor / MDC / Voc / PW के नाम व संख्या</div></div>',
+                                unsafe_allow_html=True
+                            )
+                            st.caption("हर Degree/Branch के लिए Degree, Branch और Total Admission एक बार (मर्ज) दिखते हैं, और उसके नीचे की रो में हर श्रेणी के अलग-अलग विषय अपनी संख्या के साथ आते हैं। जिस श्रेणी में विषय कम हैं वहाँ बाकी सेल खाली रहते हैं। (ऊपर चुना गया डिग्री फ़िल्टर यहाँ भी लागू है)")
+                            _bs_cats = [(l_, c_) for (l_, k_, c_) in _present_cats]
+                            _bs_labels = [l_ for l_, _c in _bs_cats]
+                            _bs_blocks = build_branch_subject_blocks(_db, "Degree (डिग्री)", "Branch (ब्रांच)", _bs_cats)
+                            st.markdown(branch_subject_sheet_html(_bs_blocks, _bs_labels), unsafe_allow_html=True)
+                            st.download_button(
+                                label="📊  Excel डाउनलोड  (ब्रांच-वाइज विषय शीट, merged)",
+                                data=generate_branch_subject_sheet_excel_bytes(_bs_blocks, _bs_labels, sheet_name=f"{deg_info['display']}_Branch_Subjects"),
+                                file_name=f"{deg_info['display']}_Branch_Subject_Sheet.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"db_dl_bs_{deg_info['display']}_all",
                                 use_container_width=True
                             )
 
