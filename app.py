@@ -1088,8 +1088,20 @@ if active_panel == "📥 1. Entry / Upload Panel":
         st.stop()
     st.write("यहाँ अपनी मुख्य एक्सेल/CSV फ़ाइल अपलोड करें। यह डेटा सीधे समीक्षा और क्लीनिंग के लिए **Work / Approve Panel (P2)** में ट्रांसफर हो जाएगा।")
     
+    # ✅ ट्रांसफर के बाद वाला सफलता संदेश (अपलोडर खाली होने के बाद दिखता है)
+    if st.session_state.pop("p1_transfer_done", False):
+        st.success("🎉 डेटा सफलतापूर्वक **Work / Approve Panel (P2)** में ट्रांसफर हो गया है! अब यहाँ से फ़ाइल हट गई है — नई फ़ाइल अपलोड की जा सकती है।")
+        st.balloons()
+
     # एक्सेल या सीएसवी फ़ाइल अपलोड करने का विकल्प
-    f = st.file_uploader("अपनी फ़ाइल अपलोड करें (CSV / XLS / XLSX)", type=["csv", "xls", "xlsx"])
+    # (key बदलते ही अपलोडर खाली हो जाता है — इसी से ट्रांसफर के बाद फ़ाइल हटाई जाती है)
+    if "p1_uploader_gen" not in st.session_state:
+        st.session_state["p1_uploader_gen"] = 0
+    f = st.file_uploader(
+        "अपनी फ़ाइल अपलोड करें (CSV / XLS / XLSX)",
+        type=["csv", "xls", "xlsx"],
+        key=f"p1_uploader_{st.session_state['p1_uploader_gen']}"
+    )
     if f:
         try:
             if f.name.lower().endswith((".xls", ".xlsx")):
@@ -1126,8 +1138,10 @@ if active_panel == "📥 1. Entry / Upload Panel":
                 # पुराने फ़ाइल के डिलीट किए गए कॉलम्स की सेटिंग्स को रीसेट करना
                 st.session_state["deleted_cols"] = [] 
                 
-                st.success("🎉 डेटा सफलतापूर्वक अपलोड होकर **Work / Approve Panel** में प्रोसेस होने के लिए ट्रांसफर हो गया है!")
-                st.balloons()
+                # 🧹 ट्रांसफर के बाद Entry Panel से फ़ाइल हटाना (अपलोडर रीसेट)
+                st.session_state["p1_uploader_gen"] += 1
+                st.session_state.pop("p1_sheet_select", None)
+                st.session_state["p1_transfer_done"] = True
                 st.rerun()
         except Exception as e:
             st.error(f"त्रुटि: {e}")
