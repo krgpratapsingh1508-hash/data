@@ -4,6 +4,8 @@ import sqlite3
 import json
 import io
 import os
+import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="NEP Master Data System", page_icon="🎓", layout="wide")
@@ -924,43 +926,156 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
 # =========================================================================
 # 🔄 Excel (.xls / .xlsx) → CSV कन्वर्टर (Panel 1 के लिए)
 # =========================================================================
-def get_excel_sheet_names(uploaded_file):
-    """Excel फ़ाइल की शीट्स के नाम लौटाता है (न पढ़ पाए तो खाली लिस्ट)।"""
-    try:
-        uploaded_file.seek(0)
-        names = pd.ExcelFile(uploaded_file).sheet_names
-    except Exception:
-        names = []
-    uploaded_file.seek(0)
-    return names
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0"   # असली .xls (पुराना Excel)
+_ZIP_MAGIC = b"PK"                # असली .xlsx / .ods
 
-def excel_to_dataframe(uploaded_file, sheet_name=0):
-    """Excel फ़ाइल को DataFrame में पढ़ता है। कई पोर्टल .xls नाम से असल में
-    HTML/टेक्स्ट फ़ाइल देते हैं, उसके लिए फ़ॉलबैक भी है।"""
-    uploaded_file.seek(0)
-    try:
-        return pd.read_excel(uploaded_file, sheet_name=sheet_name)
-    except Exception as first_err:
-        raw = uploaded_file.getvalue()
-        # असली xls (OLE) या xlsx (ZIP) है तो फ़ॉलबैक का मतलब नहीं — असली एरर दिखाएँ
-        if raw[:4] == b"\xd0\xcf\x11\xe0" or raw[:2] == b"PK":
-            raise first_err
-        try:
-            try:
-                html_text = raw.decode("utf-8-sig")
-            except UnicodeDecodeError:
-                html_text = raw.decode("cp1252", errors="replace")
-            return pd.read_html(io.StringIO(html_text))[0]
-        except Exception:
-            pass
-        try:
-            return pd.read_csv(io.BytesIO(raw), sep=None, engine="python", encoding="utf-8-sig")
-        except Exception:
-            raise first_err
+class _HTMLTableParser(HTMLParser):
+    """बिना किसी एक्स्ट्रा लाइब्रेरी (lxml/bs4) के HTML <table> पढ़ने वाला पार्सर।"""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables = []
+        self._stack = []
+        self._row = None
+        self._cell = None
 
-def dataframe_to_csv_bytes(df_in):
-    """DataFrame → CSV bytes (utf-8-sig ताकि हिंदी टेक्स्ट Excel में भी सही खुले)।"""
-    return df_in.to_csv(index=False).encode("utf-8-sig")
+    def _close_cell(self):
+        if self._cell is not None and self._row is not None:
+            self._row.append("".join(self._cell).strip())
+        self._cell = None
+
+    def _close_row(self):
+        self._close_cell()
+        if self._row is not None and self._stack and self._row:
+            self._stack[-1].append(self._row)
+        self._row = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self._stack.append([])
+        elif tag == "tr" and self._stack:
+            self._close_row()
+            self._row = []
+        elif tag in ("td", "th") and self._row is not None:
+            self._close_cell()
+            self._cell = []
+        elif tag == "br" and self._cell is not None:
+            self._cell.append(" ")
+
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th"):
+            self._close_cell()
+        elif tag == "tr":
+            self._close_row()
+        elif tag == "table" and self._stack:
+            self._close_row()
+            self.tables.append(self._stack.pop())
+
+    def finish(self):
+        self._close_row()
+        while self._stack:
+            self.tables.append(self._stack.pop())
+
+def _html_tables_to_df(text):
+    parser = _HTMLTableParser()
+    parser.feed(text)
+    parser.close()
+    parser.finish()
+    tables = [t for t in parser.tables if t]
+    if not tables:
+        raise ValueError("HTML में कोई टेबल नहीं मिली")
+    rows = max(tables, key=len)                      # सबसे बड़ी टेबल = असली डेटा
+    width = max(len(r) for r in rows)
+    rows = [r + [""] * (width - len(r)) for r in rows]
+    header = [h if h else f"Unnamed: {i}" for i, h in enumerate(rows[0])]
+    return pd.DataFrame(rows[1:], columns=header)
+
+def _spreadsheetml_to_df(raw):
+    """Excel 2003 'XML Spreadsheet' फ़ाइल (पहली शीट)।"""
+    ns = "{urn:schemas-microsoft-com:office:spreadsheet}"
+    root = ET.fromstring(raw)
+    ws = root.find(f"{ns}Worksheet")
+    if ws is None:
+        raise ValueError("XML में कोई वर्कशीट नहीं मिली")
+    rows = []
+    for row in ws.iter(f"{ns}Row"):
+        vals = []
+        for cell in row.findall(f"{ns}Cell"):
+            idx = cell.get(f"{ns}Index")
+            if idx:
+                while len(vals) < int(idx) - 1:
+                    vals.append("")
+            data = cell.find(f"{ns}Data")
+            vals.append("".join(data.itertext()).strip() if data is not None else "")
+        rows.append(vals)
+    if not rows:
+        raise ValueError("XML शीट खाली है")
+    width = max(len(r) for r in rows)
+    rows = [r + [""] * (width - len(r)) for r in rows]
+    header = [h if h else f"Unnamed: {i}" for i, h in enumerate(rows[0])]
+    return pd.DataFrame(rows[1:], columns=header)
+
+def _decode_text_bytes(raw):
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16", errors="replace")
+    for enc in ("utf-8-sig", "cp1252"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1", errors="replace")
+
+def _delimited_text_to_df(text):
+    if "\x00" in text[:20000]:
+        raise ValueError("यह टेक्स्ट नहीं, बाइनरी फ़ाइल लगती है")
+    first_line = text.lstrip("\ufeff").split("\n", 1)[0]
+    counts = {d: first_line.count(d) for d in ("\t", ",", ";", "|")}
+    sep = max(counts, key=counts.get)
+    if counts[sep] == 0:
+        raise ValueError("कोई कॉलम-सेपरेटर (Tab/Comma) नहीं मिला")
+    return pd.read_csv(io.StringIO(text), sep=sep)
+
+@st.cache_data(show_spinner=False)
+def get_excel_sheet_names(raw):
+    """असली Excel फ़ाइल की शीट्स के नाम (नकली .xls के लिए खाली लिस्ट)।"""
+    if raw[:4] == _OLE_MAGIC or raw[:2] == _ZIP_MAGIC:
+        try:
+            return pd.ExcelFile(io.BytesIO(raw)).sheet_names
+        except Exception:
+            return []
+    return []
+
+def excel_bytes_to_dataframe(raw, sheet_name=0):
+    """.xls / .xlsx को DataFrame में पढ़ता है। कई पोर्टल .xls नाम से असल में
+    HTML / XML / टेक्स्ट फ़ाइल देते हैं — उन सबको भी संभालता है।"""
+    if not raw:
+        raise ValueError("फ़ाइल खाली है")
+    # 1) असली Excel (xls / xlsx / ods)
+    if raw[:4] == _OLE_MAGIC or raw[:2] == _ZIP_MAGIC:
+        return pd.read_excel(io.BytesIO(raw), sheet_name=sheet_name)
+    # 2) नकली .xls: अंदर से देखकर टाइप पहचानना
+    text = _decode_text_bytes(raw)
+    sample = text[:500000].lower()
+    try:
+        if "urn:schemas-microsoft-com:office:spreadsheet" in sample:
+            return _spreadsheetml_to_df(raw)
+        if "<table" in sample:
+            return _html_tables_to_df(text)
+        return _delimited_text_to_df(text)
+    except Exception as e:
+        raise ValueError(
+            f"यह फ़ाइल असली Excel नहीं है और पढ़ी भी नहीं जा सकी ({e}). "
+            f"फ़ाइल की शुरुआत: {raw[:150]!r}"
+        ) from e
+
+@st.cache_data(show_spinner="🔄 Excel फ़ाइल को CSV में बदला जा रहा है...")
+def excel_bytes_to_csv_bytes(raw, sheet_name=0):
+    """Excel bytes → (CSV bytes, रोज़ की संख्या)। utf-8-sig ताकि हिंदी Excel में भी सही खुले।"""
+    df_in = excel_bytes_to_dataframe(raw, sheet_name)
+    return df_in.to_csv(index=False).encode("utf-8-sig"), len(df_in)
 
 # =========================================================================
 # 📥 PANEL 1: ENTRY / UPLOAD PANEL (डेटा सुरक्षित अपलोड)
@@ -979,13 +1094,13 @@ if active_panel == "📥 1. Entry / Upload Panel":
         try:
             if f.name.lower().endswith((".xls", ".xlsx")):
                 # 🔄 Excel फ़ाइल → पहले CSV में कन्वर्ट, फिर बिल्कुल CSV की तरह ही आगे प्रोसेस
-                sheet_names = get_excel_sheet_names(f)
+                raw_bytes = f.getvalue()
+                sheet_names = get_excel_sheet_names(raw_bytes)
                 sheet_choice = 0
                 if len(sheet_names) > 1:
                     sheet_choice = st.selectbox("📑 कौन सी शीट लोड करनी है?", sheet_names, key="p1_sheet_select")
-                df_excel = excel_to_dataframe(f, sheet_choice)
-                csv_bytes = dataframe_to_csv_bytes(df_excel)
-                st.info(f"🔄 Excel फ़ाइल '{f.name}' अपने-आप CSV में बदल दी गई ({len(df_excel)} रोज़)।")
+                csv_bytes, n_rows = excel_bytes_to_csv_bytes(raw_bytes, sheet_choice)
+                st.info(f"🔄 Excel फ़ाइल '{f.name}' अपने-आप CSV में बदल दी गई ({n_rows} रोज़)।")
                 st.download_button(
                     "📥 बदली हुई CSV फ़ाइल डाउनलोड करें (ज़रूरत हो तो)",
                     data=csv_bytes,
