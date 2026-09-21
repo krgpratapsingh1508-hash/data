@@ -4,6 +4,7 @@ import sqlite3
 import json
 import io
 import os
+import hashlib
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 import streamlit.components.v1 as components
@@ -846,6 +847,146 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key=f"download_validated_excel_{prefix}"
     )
+
+    # =====================================================================
+    # 🔵 खाली (Blank) डेटा — किस डिग्री + ब्रांच में क्या खाली है
+    # =====================================================================
+    st.divider()
+    st.subheader("🔵 खाली (Blank) डेटा — किस डिग्री + ब्रांच में")
+    st.caption("यहाँ दिखता है कि किस डिग्री + ब्रांच में कौन सा कॉलम खाली (🔵) है और कितने छात्रों का। जाँचने वाले कॉलम नीचे के बॉक्स से बदल भी सकते हैं (PG में जहाँ Minor/MDC जैसे कॉलम नहीं होते, वहाँ अपनी पसंद के कॉलम चुनें)।")
+
+    _skip_kw = ['minor', 'mdc', 'voc', 'skill', 'pw', 'project']
+    _bl_deg = deg_col if (deg_col and deg_col in df_filtered.columns) else None
+    _bl_br = None
+    for _kws in (['branch', 'stream'], ['subject']):
+        _bl_br = next((c for c in df_filtered.columns if c != _bl_deg
+                       and any(k in str(c).lower() for k in _kws)
+                       and not any(k in str(c).lower() for k in _skip_kw)), None)
+        if _bl_br is not None:
+            break
+
+    _bl_default = [c for c in (minor_col_found, mdc_col_found, voc_col_found, pw_col_found) if c]
+    if _bl_br is not None and _bl_br not in _bl_default:
+        _bl_default.append(_bl_br)
+
+    # कॉलम-सूची बदलने पर (नई फ़ाइल) चुनाव अपने-आप नए सिरे से शुरू हो, इसलिए key में कॉलमों की पहचान जोड़ी है
+    _bl_sig = hashlib.md5("|".join(map(str, df_filtered.columns)).encode("utf-8")).hexdigest()[:8]
+    _bl_key = f"blank_cols_{prefix}_{_bl_sig}"
+    if _bl_key not in st.session_state:
+        st.session_state[_bl_key] = _bl_default
+
+    st.multiselect(
+        "🔎 किन कॉलम में खाली जाँचना है:",
+        options=list(df_filtered.columns),
+        key=_bl_key
+    )
+    _bl_cols = [c for c in st.session_state[_bl_key] if c in df_filtered.columns]
+
+    if not _bl_cols:
+        st.info("ℹ️ ऊपर के बॉक्स से कम से कम एक कॉलम चुनें, फिर खाली डेटा की सूची यहाँ दिखेगी।")
+    else:
+        def _bl_clean(series):
+            s_ = series.astype(str).str.strip()
+            return s_.mask(series.isna() | (s_ == "") | (s_.str.lower() == "nan"), "(खाली/Blank)")
+
+        _work = df_filtered.copy()
+        _work["Degree (डिग्री)"] = _bl_clean(_work[_bl_deg]) if _bl_deg else "—"
+        _work["Branch (ब्रांच)"] = _bl_clean(_work[_bl_br]) if _bl_br else "—"
+        for _c in _bl_cols:
+            _work[f"__b__{_c}"] = _work[_c].isna() | (_work[_c].astype(str).str.strip() == "")
+        _flag_cols = [f"__b__{_c}" for _c in _bl_cols]
+        _work["__any__"] = _work[_flag_cols].any(axis=1)
+
+        _agg = {"कुल छात्र (Total)": ("__any__", "size"), "🔵 खाली वाले छात्र": ("__any__", "sum")}
+        for _c in _bl_cols:
+            _agg[f"🔵 {_c}"] = (f"__b__{_c}", "sum")
+        _bl_summary = _work.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]).agg(**_agg).reset_index()
+        for _c in ["🔵 खाली वाले छात्र"] + [f"🔵 {_c}" for _c in _bl_cols]:
+            _bl_summary[_c] = _bl_summary[_c].astype(int)
+
+        def _bl_reason(r):
+            _parts = [f"{_c}: {int(r[f'🔵 {_c}'])} छात्र" for _c in _bl_cols if r[f"🔵 {_c}"] > 0]
+            return ("🔵 खाली → " + " ; ".join(_parts)) if _parts else ""
+        _bl_summary["📝 कारण (Reason)"] = _bl_summary.apply(_bl_reason, axis=1)
+
+        _total_combos = len(_bl_summary)
+        _blank_combos = int((_bl_summary["🔵 खाली वाले छात्र"] > 0).sum())
+        _blank_students = int(_work["__any__"].sum())
+        _blank_cells = int(sum(_work[f].sum() for f in _flag_cols))
+
+        bm1, bm2, bm3, bm4 = st.columns(4)
+        with bm1:
+            st.metric("🎓 कुल डिग्री+ब्रांच", _total_combos)
+        with bm2:
+            st.metric("🔵 खाली वाली डिग्री+ब्रांच", _blank_combos)
+        with bm3:
+            st.metric("👥 खाली वाले छात्र", _blank_students)
+        with bm4:
+            st.metric("🔵 कुल खाली सेल", _blank_cells)
+
+        if _blank_cells == 0:
+            st.success("✅ चुने गए कॉलम में कोई भी खाली डेटा नहीं मिला।")
+        else:
+            _show_all_bl = st.checkbox("बिना खाली वाली डिग्री+ब्रांच भी दिखाएँ", value=False, key=f"blank_show_all_{prefix}")
+            _bl_show = _bl_summary if _show_all_bl else _bl_summary[_bl_summary["🔵 खाली वाले छात्र"] > 0]
+            _bl_show = _bl_show.sort_values(["🔵 खाली वाले छात्र", "Degree (डिग्री)"], ascending=[False, True]).reset_index(drop=True)
+
+            _bl_blue = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
+            _bl_blue_cols = [c for c in _bl_show.columns if "🔵" in c]
+
+            def _bl_styler(row):
+                _any_b = any(row[c] > 0 for c in _bl_blue_cols)
+                out = []
+                for c in row.index:
+                    if c in _bl_blue_cols and row[c] > 0:
+                        out.append(_bl_blue)
+                    elif c == "📝 कारण (Reason)" and row[c] and _any_b:
+                        out.append(_bl_blue)
+                    else:
+                        out.append("")
+                return out
+
+            st.dataframe(
+                _bl_show.style.apply(_bl_styler, axis=1),
+                hide_index=True,
+                use_container_width=True,
+                height=min(38 * (len(_bl_show) + 1) + 3, 650),
+                column_config={"📝 कारण (Reason)": st.column_config.TextColumn(width=500)}
+            )
+
+            _bd1, _bd2 = st.columns(2)
+            with _bd1:
+                st.download_button(
+                    label="📥 खाली-डेटा सूची CSV में डाउनलोड करें",
+                    data=_bl_show.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"{prefix.upper()}_Blank_Degree_Branch_Report.csv",
+                    mime="text/csv",
+                    key=f"blank_dl_csv_{prefix}",
+                    use_container_width=True
+                )
+            with _bd2:
+                st.download_button(
+                    label="📊 खाली-डेटा सूची Excel (XLSX) में डाउनलोड करें",
+                    data=generate_summary_excel_bytes(_bl_show, sheet_name=f"{prefix.upper()}_Blank"),
+                    file_name=f"{prefix.upper()}_Blank_Degree_Branch_Report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"blank_dl_xlsx_{prefix}",
+                    use_container_width=True
+                )
+
+            # 👨‍🎓 छात्र-वार सूची (ताकि सीधे पता चले कि किस छात्र का कौन सा कॉलम भरना है)
+            _bl_rows = _work[_work["__any__"]]
+            with st.expander(f"👨‍🎓 छात्र-वार खाली सूची ({len(_bl_rows)} छात्र)"):
+                _stu = pd.DataFrame({"टेबल में रो नं.": _bl_rows.index})
+                if key_col and key_col in _bl_rows.columns:
+                    _stu["छात्र (Key)"] = _bl_rows[key_col].astype(str).values
+                _stu["Degree (डिग्री)"] = _bl_rows["Degree (डिग्री)"].values
+                _stu["Branch (ब्रांच)"] = _bl_rows["Branch (ब्रांच)"].values
+                _stu["🔵 खाली कॉलम"] = _bl_rows.apply(
+                    lambda r: ", ".join(_c for _c in _bl_cols if r[f"__b__{_c}"]), axis=1
+                ).values
+                st.dataframe(_stu, hide_index=True, use_container_width=True, height=min(38 * (len(_stu) + 1) + 3, 500))
+
 
     # =====================================================================
     # ✅ "गलत विषय" Approve करने का सिस्टम
