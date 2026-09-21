@@ -8,8 +8,31 @@ import hashlib
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 import streamlit.components.v1 as components
+import html as _html
 
 st.set_page_config(page_title="NEP Master Data System", page_icon="🎓", layout="wide")
+
+# =========================================================================
+# 📋 लिस्ट / टेबल डिज़ाइन: जिन लिस्ट में अपना रंग नहीं है उनमें एक-एक छोड़कर हल्की धारीदार (zebra) रो
+# (जिन टेबल में लाल/नीले/हरे रंग पहले से हैं, उन्हें बिल्कुल नहीं छेड़ा जाता)
+# =========================================================================
+_orig_st_dataframe = st.dataframe
+
+def _zebra_rows(d):
+    out = pd.DataFrame("", index=d.index, columns=d.columns)
+    out.iloc[1::2, :] = "background-color: #f4f7fd"
+    return out
+
+def _designed_dataframe(data=None, *args, **kwargs):
+    try:
+        if (isinstance(data, pd.DataFrame) and 0 < len(data) <= 3000 and data.shape[1] > 0
+                and data.index.is_unique and data.columns.is_unique):
+            data = data.style.apply(_zebra_rows, axis=None)
+    except Exception:
+        pass
+    return _orig_st_dataframe(data, *args, **kwargs)
+
+st.dataframe = _designed_dataframe
 
 # =========================================================================
 # 🎨 प्रोफेशनल UI स्टाइलिंग (पूरे ऐप में कस्टम CSS)
@@ -353,6 +376,40 @@ st.markdown("""
         border: 1px solid #dde4f5; background: #f3f6fc; color: #3b4c73;
     }
     .dl-chip.red { background: #fdecee; border-color: #f5c2c7; color: #a61e2b; }
+    /* ============== 📋 लिस्ट / टेबल कार्ड डिज़ाइन ============== */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #d7e0f0;
+        border-radius: 14px;
+        box-shadow: 0 4px 14px rgba(26, 60, 110, .08);
+        transition: box-shadow .2s ease, border-color .2s ease;
+    }
+    div[data-testid="stDataFrame"]:hover {
+        border-color: #9db7e8;
+        box-shadow: 0 10px 26px rgba(26, 60, 110, .15);
+    }
+    .list-head {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        margin: 10px 0 6px 0;
+    }
+    .list-head .lh-title { font-size: 16px; font-weight: 800; color: #1a3c6e; }
+    .list-head .lh-count {
+        font-size: 12.5px; font-weight: 700; color: #ffffff; padding: 3px 12px; border-radius: 999px;
+        background: linear-gradient(135deg, #1a73e8, #5b4bdb);
+    }
+    /* 📝 कारण की लिस्ट: हर ब्रांच का अलग कार्ड */
+    .reason-card {
+        border: 1px solid #e3e8ef; border-left: 6px solid #6b7688; border-radius: 12px;
+        background: #ffffff; padding: 10px 14px; margin: 8px 0;
+        box-shadow: 0 2px 8px rgba(26, 60, 110, .06);
+    }
+    .reason-card.red { border-left-color: #d92d3a; background: linear-gradient(90deg, #fff5f6, #ffffff 40%); }
+    .reason-card.blue { border-left-color: #17a2b8; background: linear-gradient(90deg, #f0fbfd, #ffffff 40%); }
+    .reason-card .rc-title { font-weight: 800; color: #1a3c6e; font-size: 14.5px; margin-bottom: 6px; }
+    .reason-card .rs-line {
+        font-size: 13px; line-height: 1.6; padding: 4px 10px; border-radius: 8px; margin: 3px 0;
+    }
+    .reason-card .rs-line.red { background: #fdecee; color: #a61e2b; }
+    .reason-card .rs-line.blue { background: #e3f6fa; color: #0c5460; }
     .dl-hint {
         background: #f8fafc; border: 1px solid #e3e8ef; border-left: 4px solid #0f9d58;
         border-radius: 10px; padding: 8px 14px; margin-bottom: 10px;
@@ -799,7 +856,11 @@ def render_print_button(df, title, button_label="🖨️ इस लिस्ट 
     """दिए गए DataFrame को A4-साइज़ प्रिंट-फ्रेंडली फॉर्मेट में एक नई विंडो में खोलकर सीधे प्रिंट डायलॉग खोलता है।
     orientation: 'portrait' या 'landscape' — यह तय करता है कि प्रिंट पेज सीधा (खड़ा) रहेगा या आड़ा।"""
     orientation = "landscape" if str(orientation).lower().startswith("land") else "portrait"
-    table_html = df.to_html(index=False, escape=True)
+    _pdf = df.copy()
+    if "क्र.सं." not in _pdf.columns and "क्र." not in _pdf.columns:
+        _pdf.insert(0, "क्र.", range(1, len(_pdf) + 1))
+    table_html = _pdf.to_html(index=False, escape=True, border=0)
+    _orient_txt = "लैंडस्केप" if orientation == "landscape" else "पोर्ट्रेट"
     full_html = f"""
     <html>
     <head>
@@ -807,19 +868,29 @@ def render_print_button(df, title, button_label="🖨️ इस लिस्ट 
     <title>{title}</title>
     <style>
         @page {{ size: A4 {orientation}; margin: 14mm; }}
+        * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
         body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; }}
-        h2 {{ text-align: center; color: #1a3c6e; margin-bottom: 4px; }}
-        p.meta {{ text-align: center; color: #666; font-size: 12px; margin-top: 0; margin-bottom: 16px; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ border: 1px solid #444; padding: 6px 8px; font-size: 12px; text-align: left; word-break: break-word; }}
-        th {{ background-color: #eef3ff; }}
-        tr:nth-child(even) {{ background-color: #fafafa; }}
+        .hdr {{ text-align: center; border-bottom: 3px solid #1a3c6e; padding-bottom: 8px; margin-bottom: 12px; }}
+        h2 {{ color: #1a3c6e; margin: 0 0 4px 0; font-size: 20px; letter-spacing: -.2px; }}
+        p.meta {{ color: #55607a; font-size: 12px; margin: 0; }}
+        p.meta b {{ color: #1a3c6e; }}
+        table {{ width: 100%; border-collapse: collapse; border: 1px solid #9db0d3; }}
+        thead {{ display: table-header-group; }}
+        tr {{ page-break-inside: avoid; }}
+        th, td {{ border: 1px solid #c3cee6; padding: 6px 8px; font-size: 12px; text-align: left; word-break: break-word; }}
+        th {{ background-color: #1a3c6e; color: #ffffff; font-weight: 700; border-color: #1a3c6e; }}
+        tbody tr:nth-child(even) {{ background-color: #f1f5fc; }}
+        td:first-child, th:first-child {{ text-align: center; width: 4%; }}
+        .foot {{ margin-top: 10px; font-size: 11.5px; color: #55607a; text-align: right; }}
     </style>
     </head>
     <body>
-        <h2>{title}</h2>
-        <p class="meta">तारीख़: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')} &nbsp;|&nbsp; पेज: A4 ({"लैंडस्केप" if orientation == "landscape" else "पोर्ट्रेट"})</p>
+        <div class="hdr">
+            <h2>{title}</h2>
+            <p class="meta">तारीख़: {datetime.datetime.now().strftime('%d-%m-%Y %H:%M')} &nbsp;|&nbsp; पेज: A4 ({_orient_txt}) &nbsp;|&nbsp; <b>कुल रिकॉर्ड: {len(_pdf)}</b></p>
+        </div>
         {table_html}
+        <div class="foot">— लिस्ट समाप्त • कुल {len(_pdf)} रिकॉर्ड —</div>
     </body>
     </html>
     """
@@ -1738,6 +1809,8 @@ def generate_summary_excel_bytes(summary_df, sheet_name="Summary", students_df=N
                         cell.alignment = Alignment(vertical="top", wrap_text=(c_i0 == reason_i2))
                         f_list = flags.get(cname)
                         f = f_list[r_i] if f_list is not None else ""
+                        if r_i % 2 == 1 and not f:
+                            cell.fill = PatternFill("solid", start_color="F4F7FD", end_color="F4F7FD")
                         if f == "w":
                             cell.fill = red_fill
                             cell.font = Font(bold=True, color="721C24")
@@ -2516,8 +2589,17 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             if not _reason_rows.empty:
                                 with st.expander(f"📝 पूरा कारण देखें (लाल/नीली {len(_reason_rows)} ब्रांच)"):
                                     for _, _rr in _reason_rows.iterrows():
-                                        st.markdown(f"**{_rr['Degree (डिग्री)']} → {_rr['Branch (ब्रांच)']}**")
-                                        st.text(_rr["📝 कारण (Reason)"].replace("  ||  ", "\n"))
+                                        _rtxt = str(_rr["📝 कारण (Reason)"])
+                                        _lines_html = ""
+                                        for _ln in _rtxt.split("  ||  "):
+                                            _lc = "red" if "🔴" in _ln else "blue"
+                                            _lines_html += f'<div class="rs-line {_lc}">{_html.escape(_ln).replace("$", "&#36;")}</div>'
+                                        _cc = "red" if "🔴" in _rtxt else "blue"
+                                        _ttl = _html.escape(f"{_rr['Degree (डिग्री)']} → {_rr['Branch (ब्रांच)']}").replace("$", "&#36;")
+                                        st.markdown(
+                                            f'<div class="reason-card {_cc}"><div class="rc-title">{_ttl}</div>{_lines_html}</div>',
+                                            unsafe_allow_html=True
+                                        )
                         else:
                             # इस डेटा में Minor/MDC/Voc/PW में से कोई कॉलम नहीं है — तब भी डिग्री+ब्रांच की गिनती दिखाना
                             students_df, student_flags = None, None
