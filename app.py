@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 import streamlit.components.v1 as components
 import html as _html
+import re as _re
 
 st.set_page_config(page_title="NEP Master Data System", page_icon="🎓", layout="wide")
 
@@ -33,6 +34,35 @@ def _designed_dataframe(data=None, *args, **kwargs):
     return _orig_st_dataframe(data, *args, **kwargs)
 
 st.dataframe = _designed_dataframe
+
+# =========================================================================
+# 🏷️ हेडलाइन डिज़ाइन: st.title / st.header / st.subheader और "#, ##, ###, ####" वाली markdown हेडिंग
+# अपने-आप ग्रेडिएंट बैनर बन जाती हैं (कोड में कहीं कुछ बदलने की ज़रूरत नहीं)
+# =========================================================================
+_orig_st_markdown = st.markdown
+_HEAD_RE = _re.compile(r'^\s*(#{1,4})\s+([^\n]+?)\s*$')
+
+def _banner_html(text, level):
+    t = _html.escape(str(text)).replace("$", "&#36;")
+    t = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    return f'<div class="hb hb{int(level)}">{t}</div>'
+
+def _designed_markdown(body="", *args, **kwargs):
+    if isinstance(body, str) and not args and not kwargs.get("unsafe_allow_html"):
+        _m = _HEAD_RE.match(body)
+        if _m:
+            return _orig_st_markdown(_banner_html(_m.group(2), len(_m.group(1))), unsafe_allow_html=True)
+    return _orig_st_markdown(body, *args, **kwargs)
+
+def _make_head_fn(level):
+    def _fn(body="", *args, **kwargs):
+        return _orig_st_markdown(_banner_html(body, level), unsafe_allow_html=True)
+    return _fn
+
+st.markdown = _designed_markdown
+st.title = _make_head_fn(1)
+st.header = _make_head_fn(2)
+st.subheader = _make_head_fn(3)
 
 # =========================================================================
 # 🎨 प्रोफेशनल UI स्टाइलिंग (पूरे ऐप में कस्टम CSS)
@@ -376,7 +406,66 @@ st.markdown("""
         border: 1px solid #dde4f5; background: #f3f6fc; color: #3b4c73;
     }
     .dl-chip.red { background: #fdecee; border-color: #f5c2c7; color: #a61e2b; }
-    /* ============== 🏷️ सभी पैनल की हेडलाइन = ग्रेडिएंट बैनर (डिग्री+ब्रांच समरी जैसा) ============== */
+    /* ============== 🏷️ हेडलाइन बैनर (st.title / subheader / ### सब जगह) ============== */
+    .hb {
+        color: #ffffff;
+        border-radius: 14px;
+        margin: 8px 0 14px 0;
+        font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+        font-weight: 800;
+        letter-spacing: -.2px;
+        line-height: 1.35;
+        box-shadow: 0 8px 22px rgba(26, 60, 110, .25);
+        animation: floatIn .5s ease-out;
+    }
+    .hb1 { font-size: 25px; padding: 16px 22px; background: linear-gradient(135deg, #1a3c6e, #2f5fb3 60%, #5b4bdb); }
+    .hb2 { font-size: 22px; padding: 13px 20px; background: linear-gradient(135deg, #1f4d8f, #3468c4 60%, #6a5be0); }
+    .hb3 { font-size: 19px; padding: 11px 18px; background: linear-gradient(135deg, #2b5aa8, #4a6fd6 60%, #6a5be0); box-shadow: 0 6px 16px rgba(43, 90, 168, .22); }
+    .hb4 {
+        font-size: 16px; padding: 8px 14px; color: #1a3c6e;
+        background: linear-gradient(90deg, #eef3ff, #ffffff);
+        border-left: 6px solid #5b4bdb; border-radius: 10px; box-shadow: none;
+    }
+    .mini-head {
+        border-left: 5px solid #1a73e8; background: linear-gradient(90deg, #eef4ff, #ffffff);
+        border-radius: 10px; padding: 7px 14px; margin: 4px 0 8px 0;
+        color: #1a3c6e; font-weight: 800; font-size: 15px; line-height: 1.4;
+    }
+    .mini-head span { color: #6b7688; font-weight: 500; font-size: 12.5px; }
+
+    /* ============== 🧭 विजेट लेबल / कैप्शन / डिवाइडर / टैब बार ============== */
+    div[data-testid="stWidgetLabel"] p, div[data-testid="stWidgetLabel"] label {
+        color: #1a3c6e;
+        font-weight: 700;
+    }
+    div[data-testid="stCaptionContainer"] {
+        border-left: 3px solid #c7d6f5;
+        padding-left: 10px;
+        color: #55607a;
+    }
+    .block-container hr {
+        border: none !important;
+        height: 3px !important;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #1a73e8, #5b4bdb 45%, rgba(91, 75, 219, 0)) !important;
+        opacity: .55;
+        margin: 1.4rem 0 !important;
+    }
+    div[data-baseweb="tab-list"] {
+        gap: 6px;
+        background: #f3f6fc;
+        padding: 6px 8px 0 8px;
+        border-radius: 14px 14px 0 0;
+        border-bottom: 1px solid #dde4f5;
+    }
+    div[data-baseweb="tab-highlight"] {
+        height: 4px !important;
+        border-radius: 4px;
+        background: linear-gradient(90deg, #1a73e8, #5b4bdb) !important;
+    }
+    button[data-baseweb="tab"] { font-size: 15px; }
+
+    /* ============== 🏷️ (पुराना तरीका, बचा हुआ) हेडलाइन CSS ============== */
     .block-container div[data-testid="stHeading"] h1,
     .block-container div[data-testid="stMarkdownContainer"] > h1,
     .block-container div[data-testid="stHeading"] h2,
@@ -557,28 +646,30 @@ st.markdown("""
 
     /* ============== 🔘 रेडियो = पिल (गोली) स्विच ============== */
     div[data-testid="stRadio"] div[role="radiogroup"] { gap: 8px; flex-wrap: wrap; }
-    div[data-testid="stRadio"] div[role="radiogroup"] > label {
+    div[data-testid="stRadio"] label[data-baseweb="radio"] {
         background: #f3f6fc;
         border: 1.5px solid #cfd9ea;
         border-radius: 999px;
-        padding: 7px 18px;
-        margin: 0;
+        padding: 8px 18px;
+        margin: 0 !important;
         cursor: pointer;
         transition: all .15s ease;
     }
-    div[data-testid="stRadio"] div[role="radiogroup"] > label > div:first-of-type { display: none; }
-    div[data-testid="stRadio"] div[role="radiogroup"] > label:hover {
+    div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-of-type:not(:has([data-testid="stMarkdownContainer"])) {
+        display: none !important;
+    }
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:hover {
         border-color: #1a73e8;
         background: #e9f1ff;
         transform: translateY(-1px);
     }
-    div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) {
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
         background: linear-gradient(135deg, #1a73e8, #5b4bdb);
         border-color: transparent;
         box-shadow: 0 5px 14px rgba(91, 75, 219, .32);
     }
-    div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked),
-    div[data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) * {
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked),
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) * {
         color: #ffffff !important;
         font-weight: 700;
     }
@@ -2427,9 +2518,9 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 return [''] * len(row)
                             
                             if current_cat["rule_key"] == "pw":
-                                _sum_hdr_html = "**Project Type Summary**<br><span style='color:gray; font-size:12px;'>(प्रोजेक्ट प्रकार की समरी सूची)</span>"
+                                _sum_hdr_html = "<div class='mini-head'>Project Type Summary<br><span>(प्रोजेक्ट प्रकार की समरी सूची)</span></div>"
                             else:
-                                _sum_hdr_html = "**Subject Distribution Summary**<br><span style='color:gray; font-size:12px;'>(विषय आवंटन की समरी सूची)</span>"
+                                _sum_hdr_html = "<div class='mini-head'>Subject Distribution Summary<br><span>(विषय आवंटन की समरी सूची)</span></div>"
                             _sum_key = "subsum_" + "".join(ch if ch.isalnum() else "_" for ch in deg_info["display"])
                             _show_summary = inline_section_toggle(_sum_key, _sum_hdr_html)
                             
