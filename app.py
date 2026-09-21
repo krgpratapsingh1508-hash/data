@@ -1622,7 +1622,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                     if _scope:
                         st.divider()
                         st.markdown(f"### 🎓 डिग्री + ब्रांच-वाइज समरी — {selected_category}")
-                        st.caption("हर डिग्री और ब्रांच के सामने कुल छात्र, और चुनी हुई श्रेणी में कितने सही (✅), गलत (🔴) और खाली (🔵) हैं। 🔴 लाल रो = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय | 🔵 नीली रो = डेटा खाली है (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)।")
+                        st.caption("हर डिग्री और ब्रांच के सामने कुल छात्र, और चुनी हुई श्रेणी में कितने सही (✅), गलत (🔴) और खाली (🔵) हैं। 🔴 लाल रो = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय | 🔵 नीली रो = डेटा खाली है (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)। 📝 कारण कॉलम में लाल/नीली रो का पूरा कारण लिखा आता है।")
 
                         _db = df_deg_filtered.copy()
 
@@ -1678,10 +1678,38 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             db_summary["_wrong"] = db_summary["_wrong"].astype(int)
                             db_summary["_blank"] = db_summary["_blank"].astype(int)
                             db_summary["_ok"] = db_summary["_total"] - db_summary["_wrong"] - db_summary["_blank"]
-                            db_summary = db_summary[["Degree (डिग्री)", "Branch (ब्रांच)", "_total", "_ok", "_wrong", "_blank"]]
+
+                            # 📝 कारण (Reason): लाल / नीली रो का पूरा कारण — कौन सा विषय गलत है (कितने छात्र) और कितने खाली हैं
+                            def _build_reason(g):
+                                parts = []
+                                w = g[g["_wrong"]]
+                                if len(w):
+                                    if _scope == "UG":
+                                        w = w.assign(_rd=w.apply(lambda r: _row_degree_name(r) or deg_info["display"], axis=1))
+                                    else:
+                                        w = w.assign(_rd=deg_info["display"])
+                                    for _rd, _wg in w.groupby("_rd"):
+                                        _vc = _wg[_c_col].astype(str).str.strip().value_counts()
+                                        _subj_txt = ", ".join(f"{k} ({v})" for k, v in _vc.items())
+                                        parts.append(f"🔴 {len(_wg)} छात्रों का {selected_category} विषय {_rd} के मास्टर नियम में मान्य नहीं है → {_subj_txt}")
+                                _b = int(g["_blank"].sum())
+                                if _b:
+                                    parts.append(f"🔵 {_b} छात्रों का {selected_category} खाली है (डेटा नहीं भरा गया)")
+                                return "  ||  ".join(parts)
+
+                            _reasons = {}
+                            for (_d_k, _b_k), _g in _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]):
+                                _reasons[(_d_k, _b_k)] = _build_reason(_g)
+                            db_summary["_reason"] = [
+                                _reasons.get((_d_k, _b_k), "")
+                                for _d_k, _b_k in zip(db_summary["Degree (डिग्री)"], db_summary["Branch (ब्रांच)"])
+                            ]
+
+                            db_summary = db_summary[["Degree (डिग्री)", "Branch (ब्रांच)", "_total", "_ok", "_wrong", "_blank", "_reason"]]
                             db_summary.columns = [
                                 "Degree (डिग्री)", "Branch (ब्रांच)",
-                                "कुल छात्र (Total)", "✅ सही (Correct)", "🔴 गलत (Wrong)", "🔵 खाली (Blank)"
+                                "कुल छात्र (Total)", "✅ सही (Correct)", "🔴 गलत (Wrong)", "🔵 खाली (Blank)",
+                                "📝 कारण (Reason)"
                             ]
                             db_summary = db_summary.sort_values(
                                 ["Degree (डिग्री)", "कुल छात्र (Total)"], ascending=[True, False]
@@ -1706,8 +1734,17 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 db_summary.style.apply(_db_row_styler, axis=1),
                                 hide_index=True,
                                 use_container_width=True,
-                                height=min(38 * (len(db_summary) + 1) + 3, 650)
+                                height=min(38 * (len(db_summary) + 1) + 3, 650),
+                                column_config={"📝 कारण (Reason)": st.column_config.TextColumn(width=700)}
                             )
+
+                            # 📝 लंबा कारण टेबल के सेल में कट सकता है, इसलिए पूरा कारण यहाँ भी दिखाना
+                            _reason_rows = db_summary[db_summary["📝 कारण (Reason)"] != ""]
+                            if not _reason_rows.empty:
+                                with st.expander(f"📝 पूरा कारण देखें (लाल/नीली {len(_reason_rows)} ब्रांच)"):
+                                    for _, _rr in _reason_rows.iterrows():
+                                        st.markdown(f"**{_rr['Degree (डिग्री)']} → {_rr['Branch (ब्रांच)']}**")
+                                        st.text(_rr["📝 कारण (Reason)"].replace("  ||  ", "\n"))
                         else:
                             # इस श्रेणी का कॉलम इस डेटा में नहीं है (जैसे PG में Minor/MDC) — तब भी डिग्री+ब्रांच की गिनती दिखाना
                             st.info(f"ℹ️ इस डेटा में '{selected_category}' का कॉलम नहीं मिला, इसलिए नीचे सिर्फ डिग्री + ब्रांच के हिसाब से छात्रों की कुल संख्या दिखाई जा रही है।")
