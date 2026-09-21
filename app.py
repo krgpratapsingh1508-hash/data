@@ -1351,6 +1351,13 @@ def generate_summary_excel_bytes(summary_df, sheet_name="Summary", students_df=N
 
         # डेटा रो: गलत > 0 = लाल सेल, खाली > 0 = नीला सेल, कारण सेल = लाल (गलत हो तो) वरना नीला
         for r_i, (_, row) in enumerate(summary_df.iterrows(), start=2):
+            if str(row.iloc[0]).startswith("कुल योग"):
+                for c_i0 in range(len(cols)):
+                    cell = ws.cell(row=r_i, column=c_i0 + 1)
+                    cell.border = border
+                    cell.fill = head_fill
+                    cell.font = Font(bold=True, color="FFFFFF")
+                continue
             any_w = any(row.iloc[i] > 0 for i in red_idx)
             any_b = any(row.iloc[i] > 0 for i in blue_idx)
             for c_i0 in range(len(cols)):
@@ -1381,7 +1388,8 @@ def generate_summary_excel_bytes(summary_df, sheet_name="Summary", students_df=N
             ws.column_dimensions[get_column_letter(c_i + 1)].width = width
 
         ws.freeze_panes = "C2"
-        ws.auto_filter.ref = ws.dimensions
+        _last_r = ws.max_row - 1 if str(summary_df.iloc[-1, 0]).startswith("कुल योग") and ws.max_row > 2 else ws.max_row
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{_last_r}"   # फ़िल्टर/सॉर्ट में Total रो शामिल नहीं
 
         # 📄 शीट 2: Reason वाले छात्रों की लिस्ट (जिनका Minor/MDC/Voc/PW गलत या खाली है)
         if students_df is not None:
@@ -2112,11 +2120,21 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             db_summary = db_summary.sort_values(
                                 ["Degree (डिग्री)", "कुल छात्र (Total)"], ascending=[True, False]
                             ).reset_index(drop=True)
+                            _db_core = db_summary.copy()   # मेट्रिक्स के लिए बिना Total रो वाली कॉपी
+                            _tot = {c_: "" for c_ in db_summary.columns}
+                            _tot["Degree (डिग्री)"] = "कुल योग (GRAND TOTAL)"
+                            _tot["Branch (ब्रांच)"] = ""
+                            for c_ in db_summary.columns:
+                                if c_ not in ("Degree (डिग्री)", "Branch (ब्रांच)", "📝 कारण (Reason)"):
+                                    _tot[c_] = int(db_summary[c_].sum())
+                            db_summary = pd.concat([db_summary, pd.DataFrame([_tot])], ignore_index=True)
 
                             _wrong_cols = [c for c in db_summary.columns if "🔴" in c]
                             _blank_cols = [c for c in db_summary.columns if "🔵" in c]
 
                             def _db_cell_styler(row):
+                                if str(row["Degree (डिग्री)"]).startswith("कुल योग"):
+                                    return ['background-color: #1a3c6e; color: #ffffff; font-weight: bold;'] * len(row)
                                 _any_w = any(row[c] > 0 for c in _wrong_cols)
                                 _any_b = any(row[c] > 0 for c in _blank_cols)
                                 out = []
@@ -2160,11 +2178,11 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
 
                             dm1, dm2, dm3 = st.columns(3)
                             with dm1:
-                                st.metric("🎓 कुल डिग्री+ब्रांच कॉम्बिनेशन", len(db_summary))
+                                st.metric("🎓 कुल डिग्री+ब्रांच कॉम्बिनेशन", len(_db_core))
                             with dm2:
-                                st.metric("🔴 कुल गलत एंट्री (सभी श्रेणी)", int(db_summary[_wrong_cols].to_numpy().sum()))
+                                st.metric("🔴 कुल गलत एंट्री (सभी श्रेणी)", int(_db_core[_wrong_cols].to_numpy().sum()))
                             with dm3:
-                                st.metric("🔵 कुल खाली सेल (सभी श्रेणी)", int(db_summary[_blank_cols].to_numpy().sum()))
+                                st.metric("🔵 कुल खाली सेल (सभी श्रेणी)", int(_db_core[_blank_cols].to_numpy().sum()))
 
                             st.dataframe(
                                 db_summary.style.apply(_db_cell_styler, axis=1),
@@ -2195,6 +2213,9 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 st.metric("🎓 कुल डिग्री+ब्रांच कॉम्बिनेशन", len(db_summary))
                             with dm2:
                                 st.metric("👥 कुल छात्र", int(db_summary["कुल छात्र (Total)"].sum()))
+                            db_summary = pd.concat([db_summary, pd.DataFrame([{
+                                "Degree (डिग्री)": "कुल योग (GRAND TOTAL)", "Branch (ब्रांच)": "",
+                                "कुल छात्र (Total)": int(db_summary["कुल छात्र (Total)"].sum())}])], ignore_index=True)
                             st.dataframe(
                                 db_summary,
                                 hide_index=True,
