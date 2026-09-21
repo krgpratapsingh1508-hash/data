@@ -59,6 +59,57 @@ def _make_head_fn(level):
         return _orig_st_markdown(_banner_html(body, level), unsafe_allow_html=True)
     return _fn
 
+# =========================================================================
+# ✍️ लिखा हुआ टेक्स्ट (st.write / st.caption / st.info / st.success / st.warning / st.error) का डिज़ाइन
+# =========================================================================
+_orig_st_caption = st.caption
+_orig_st_write = st.write
+_LIST_LIKE_RE = _re.compile(r'(^|\n)\s*([-*+]\s|\d+[.)]\s|\||#|>)')
+
+def _rich_text(t):
+    t = _html.escape(str(t)).replace("$", "&#36;")
+    t = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    t = _re.sub(r"`([^`]+?)`", r"<code>\1</code>", t)
+    return t.replace("\n", "<br>")
+
+def _plain_text_ok(body):
+    return isinstance(body, str) and body.strip() != "" and not _LIST_LIKE_RE.search(body)
+
+_ALERT_SYMBOL = {"success": "✓", "info": "i", "warning": "!", "error": "✕"}
+
+_orig_alerts = {_k: getattr(st, _k) for _k in ("success", "info", "warning", "error")}
+
+def _make_alert_fn(kind):
+    def _fn(body="", *args, icon=None, **kwargs):
+        if not _plain_text_ok(body):
+            # सूची/टेबल जैसा मार्कडाउन या गैर-टेक्स्ट → Streamlit का अपना अलर्ट (कुछ भी छूटेगा नहीं)
+            if icon is not None:
+                kwargs["icon"] = icon
+            return _orig_alerts[kind](body, *args, **kwargs)
+        _ic = _html.escape(str(icon)) if icon else _ALERT_SYMBOL[kind]
+        return _orig_st_markdown(
+            f'<div class="al al-{kind}"><div class="al-ic">{_ic}</div><div class="al-tx">{_rich_text(body)}</div></div>',
+            unsafe_allow_html=True
+        )
+    return _fn
+
+def _designed_caption(body="", *args, **kwargs):
+    if _plain_text_ok(body) and not args and not kwargs:
+        return _orig_st_markdown(f'<div class="cap">{_rich_text(body)}</div>', unsafe_allow_html=True)
+    return _orig_st_caption(body, *args, **kwargs)
+
+def _designed_write(*args, **kwargs):
+    if len(args) == 1 and not kwargs and _plain_text_ok(args[0]):
+        return _orig_st_markdown(f'<div class="txt">{_rich_text(args[0])}</div>', unsafe_allow_html=True)
+    return _orig_st_write(*args, **kwargs)
+
+st.success = _make_alert_fn("success")
+st.info = _make_alert_fn("info")
+st.warning = _make_alert_fn("warning")
+st.error = _make_alert_fn("error")
+st.caption = _designed_caption
+st.write = _designed_write
+
 st.markdown = _designed_markdown
 st.title = _make_head_fn(1)
 st.header = _make_head_fn(2)
@@ -433,6 +484,46 @@ st.markdown("""
     }
     .mini-head span { color: #6b7688; font-weight: 500; font-size: 12.5px; }
 
+    /* ============== ✍️ लिखा हुआ टेक्स्ट: पैराग्राफ, कैप्शन, अलर्ट कार्ड ============== */
+    .txt {
+        font-size: 15px; line-height: 1.75; color: #2f3b57;
+        background: linear-gradient(90deg, #f3f6fd, #ffffff 70%);
+        border: 1px solid #e3e8ef; border-left: 5px solid #5b4bdb; border-radius: 12px;
+        padding: 10px 16px; margin: 4px 0 10px 0;
+        box-shadow: 0 2px 8px rgba(26, 60, 110, .05);
+    }
+    .txt b, .cap b, .al-tx b { color: #1a3c6e; font-weight: 800; }
+    .al .al-tx b { color: inherit; }
+    .cap {
+        font-size: 13.5px; line-height: 1.7; color: #55607a;
+        background: #f8fafc; border-left: 4px solid #b9c9ec; border-radius: 8px;
+        padding: 7px 12px; margin: 2px 0 8px 0;
+    }
+    .txt code, .cap code, .al code {
+        background: rgba(26, 60, 110, .09); border-radius: 6px; padding: 1px 6px; font-size: 90%;
+    }
+    .al {
+        display: flex; align-items: center; gap: 12px;
+        border: 1px solid transparent; border-left-width: 6px; border-radius: 12px;
+        padding: 11px 16px; margin: 8px 0;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, .06);
+        animation: floatIn .4s ease-out;
+    }
+    .al .al-ic {
+        flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 15px; color: #ffffff;
+    }
+    .al .al-tx { font-size: 14.5px; line-height: 1.6; font-weight: 600; }
+    .al-success { background: linear-gradient(90deg, #e8f9ef, #ffffff 85%); border-color: #bfe8d0; border-left-color: #0f9d58; color: #0b6b3a; }
+    .al-success .al-ic { background: linear-gradient(135deg, #2bc07a, #0b8f52); }
+    .al-info { background: linear-gradient(90deg, #e8f1ff, #ffffff 85%); border-color: #c3d8fa; border-left-color: #1a73e8; color: #1a4fa0; }
+    .al-info .al-ic { background: linear-gradient(135deg, #3b8cf0, #1a5fd0); }
+    .al-warning { background: linear-gradient(90deg, #fff4de, #ffffff 85%); border-color: #f6dca4; border-left-color: #f59e0b; color: #8a5a00; }
+    .al-warning .al-ic { background: linear-gradient(135deg, #fbbf24, #e08a00); }
+    .al-error { background: linear-gradient(90deg, #fdeaec, #ffffff 85%); border-color: #f5c2c7; border-left-color: #d92d3a; color: #a61e2b; }
+    .al-error .al-ic { background: linear-gradient(135deg, #ff6a5c, #d92d3a); }
+
     /* ============== 🧭 विजेट लेबल / कैप्शन / डिवाइडर / टैब बार ============== */
     div[data-testid="stWidgetLabel"] p, div[data-testid="stWidgetLabel"] label {
         color: #1a3c6e;
@@ -653,6 +744,8 @@ st.markdown("""
         padding: 8px 18px;
         margin: 0 !important;
         cursor: pointer;
+        display: flex !important;
+        align-items: center;
         transition: all .15s ease;
     }
     div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-of-type:not(:has([data-testid="stMarkdownContainer"])) {
