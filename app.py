@@ -669,6 +669,53 @@ else:
 import io
 from openpyxl.styles import PatternFill, Border, Side
 
+# =========================================================================
+# ⚪ खाली-छूट (Blank Exemption): जिन डिग्री+ब्रांच में Minor/MDC/Voc/PW हमेशा खाली रहते हैं
+# =========================================================================
+def _norm_blank_label(v):
+    s_ = "" if pd.isna(v) else str(v).strip()
+    return s_ if (s_ and s_.lower() != "nan") else "(खाली/Blank)"
+
+def detect_deg_branch_cols(df):
+    """डिग्री और ब्रांच कॉलम पहचानना (Minor/MDC/Voc/PW वाले कॉलम को ब्रांच न मानना)।"""
+    skip_kw = ['minor', 'mdc', 'voc', 'skill', 'pw', 'project']
+    cols = list(df.columns)
+    deg = next((c for c in cols if any(k in str(c).lower() for k in ['deg', 'course', 'class'])), None)
+    br = None
+    for kws in (['branch', 'stream'], ['subject']):
+        br = next((c for c in cols if c != deg and any(k in str(c).lower() for k in kws)
+                   and not any(k in str(c).lower() for k in skip_kw)), None)
+        if br is not None:
+            break
+    return deg, br
+
+def get_blank_exempt_pairs(prefix=None):
+    """सेव की हुई (डिग्री, ब्रांच) जोड़ियाँ। prefix=None हो तो UG + PG दोनों की मिलाकर।"""
+    pairs = set()
+    for pf in ([prefix] if prefix else ["ug", "pg"]):
+        raw = get_app_setting(f"blank_exempt_{pf}", "[]")
+        try:
+            for item in json.loads(raw):
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    pairs.add((str(item[0]), str(item[1])))
+        except Exception:
+            pass
+    return pairs
+
+def set_blank_exempt_pairs(prefix, pairs):
+    set_app_setting(f"blank_exempt_{prefix}", json.dumps(sorted([list(p) for p in pairs]), ensure_ascii=False))
+
+def blank_exempt_mask(df, prefix=None):
+    """हर रो के लिए True/False: क्या इस रो की डिग्री+ब्रांच 'खाली-छूट' में है (तो Minor..PW का खाली नीला नहीं होगा)।"""
+    n = len(df)
+    pairs = get_blank_exempt_pairs(prefix)
+    if n == 0 or not pairs:
+        return pd.Series([False] * n, index=df.index)
+    dc, bc = detect_deg_branch_cols(df)
+    deg_lbl = df[dc].map(_norm_blank_label) if dc else pd.Series(["—"] * n, index=df.index)
+    br_lbl = df[bc].map(_norm_blank_label) if bc else pd.Series(["—"] * n, index=df.index)
+    return pd.Series([(d, b) in pairs for d, b in zip(deg_lbl, br_lbl)], index=df.index)
+
 def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, mdc_col_found, voc_col_found, pw_col_found, master_rules=None, sheet_name="Verified_Data", approved_keys=None, key_col=None, prefix=None):
     """
     🔧 रीयूज़ेबल फ़ंक्शन: किसी भी DataFrame को रंगीन (🔴 गलत / 🔵 खाली / 🟢 Approved) Excel bytes में बदलता है।
@@ -689,6 +736,7 @@ def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, 
 
         targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
         approved_keys = approved_keys or set()
+        _exempt_list = blank_exempt_mask(df_filtered, prefix).tolist()   # ⚪ खाली-छूट वाली डिग्री+ब्रांच
 
         for idx, (_, row) in enumerate(df_filtered.iterrows()):
             row_num = idx + 2  # एक्सेल डेटा रो
@@ -723,8 +771,9 @@ def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, 
                     rule_key = targets_xl[col_name]
 
                     if pd.isna(val) or str(val).strip() == "":
-                        cell.fill = blue_fill
-                        cell.border = thin_border
+                        if not _exempt_list[idx]:
+                            cell.fill = blue_fill
+                            cell.border = thin_border
                     else:
                         val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
                         valid_list = c_rule.get(rule_key, [])
@@ -793,6 +842,9 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
                         mismatched_cols.append(col_name)
         return mismatched_cols
 
+    # ⚪ खाली-छूट वाली डिग्री+ब्रांच की रो (इनमें Minor/MDC/Voc/PW खाली होने पर नीला नहीं होगा)
+    _exempt_arr = blank_exempt_mask(df_filtered, prefix).tolist()
+
     # --- 🖥️ लाइव वैरिफिकेशन स्टाइलर फ़ंक्शन (स्क्रीन ग्रिड के लिए फिक्स) ---
     def cell_styler(dataframe):
         s_df = pd.DataFrame('', index=dataframe.index, columns=dataframe.columns)
@@ -812,8 +864,8 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
             for col_name in targets:
                 if col_name and col_name in dataframe.columns:
                     val = row[col_name]
-                    # 🔵 स्थिति 1: अगर पूरी तरह से ब्लैंक है तो नीला करें
-                    if pd.isna(val) or str(val).strip() == "":
+                    # 🔵 स्थिति 1: अगर पूरी तरह से ब्लैंक है तो नीला करें (खाली-छूट वाली डिग्री+ब्रांच को छोड़कर)
+                    if (pd.isna(val) or str(val).strip() == "") and not _exempt_arr[position]:
                         s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 1px solid #17a2b8;'
 
             # 🔴 गलत विषय → लाल | ✅ अगर पहले से Approve हो चुका है → हरा (अब गलत नहीं माना जाएगा)
@@ -823,6 +875,32 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
                 else:
                     s_df.at[index, col_name] = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid red;'
         return s_df
+
+    # =====================================================================
+    # ⚪ खाली-छूट सेटिंग: यहाँ बताएँ कि किस डिग्री + ब्रांच में Minor / MDC / Voc / PW खाली ही रहते हैं
+    # =====================================================================
+    _ex_dc, _ex_bc = detect_deg_branch_cols(df_filtered)
+    _ex_deg = df_filtered[_ex_dc].map(_norm_blank_label) if _ex_dc else pd.Series(["—"] * len(df_filtered), index=df_filtered.index)
+    _ex_br = df_filtered[_ex_bc].map(_norm_blank_label) if _ex_bc else pd.Series(["—"] * len(df_filtered), index=df_filtered.index)
+    _saved_pairs = get_blank_exempt_pairs(prefix)
+    _all_pairs = sorted(set(zip(_ex_deg, _ex_br)) | _saved_pairs)
+    _pair_label = lambda pr: f"{pr[0]} → {pr[1]}"
+    _label_to_pair = {_pair_label(pr): pr for pr in _all_pairs}
+    _ex_opts = list(_label_to_pair.keys())
+    _ex_sig = hashlib.md5("|".join(_ex_opts).encode("utf-8")).hexdigest()[:8]
+
+    with st.expander(f"⚪ खाली-छूट सेटिंग — जिन डिग्री + ब्रांच में Minor/MDC/Voc/PW खाली ही रहते हैं ({len(_saved_pairs)} चुनी हुई)"):
+        st.caption("यहाँ चुनी गई डिग्री + ब्रांच में Minor, MDC, Voc और PW खाली होने पर 🔵 नीला रंग नहीं लगेगा, और खाली-गिनती में भी नहीं जुड़ेगा (टेबल, Excel डाउनलोड, खाली-सूची और डैशबोर्ड — सब जगह)। अगर उनमें कोई विषय भरा हो तो वह पहले की तरह जाँचा जाएगा।")
+        _ex_sel = st.multiselect(
+            "इन डिग्री + ब्रांच में खाली सेल नीला न हो:",
+            options=_ex_opts,
+            default=[_pair_label(pr) for pr in sorted(_saved_pairs)],
+            key=f"blank_exempt_sel_{prefix}_{_ex_sig}"
+        )
+        if st.button("💾 खाली-छूट सेव करें", key=f"blank_exempt_save_{prefix}"):
+            set_blank_exempt_pairs(prefix, {_label_to_pair[l_] for l_ in _ex_sel})
+            st.success("🎉 खाली-छूट सेव हो गई! अब चुनी हुई डिग्री+ब्रांच में खाली सेल नीले नहीं दिखेंगे।")
+            st.rerun()
 
     st.subheader(f"📊 लाइव वैरिफाइड {prefix.upper()} डेटा टेबल")
     st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच) | 🟢 हरा सेल = Approved (मान्य किया गया, अब गलत नहीं गिना जाएगा)")
@@ -838,7 +916,8 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
     # --- 🚨 📥 रंगीन एक्सेल डाउनलोड (अब शेयर्ड फ़ंक्शन का इस्तेमाल कर रहा है) 🚨 ---
     processed_data = generate_colored_excel_bytes(
         df_filtered, deg_col, br_col, minor_col_found, mdc_col_found, voc_col_found, pw_col_found,
-        master_rules=master_rules, sheet_name="Verified_Data", approved_keys=approved_keys_set, key_col=key_col
+        master_rules=master_rules, sheet_name="Verified_Data", approved_keys=approved_keys_set, key_col=key_col,
+        prefix=prefix
     )
     st.download_button(
         label=f"📥 रंगीन (🔴/🔵/🟢) {prefix.upper()} डेटा एक्सेल डाउनलोड करें",
@@ -892,10 +971,17 @@ def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=Non
         _work = df_filtered.copy()
         _work["Degree (डिग्री)"] = _bl_clean(_work[_bl_deg]) if _bl_deg else "—"
         _work["Branch (ब्रांच)"] = _bl_clean(_work[_bl_br]) if _bl_br else "—"
+        _ex_s = pd.Series(_exempt_arr, index=_work.index)
+        _cat_set = {c_ for c_ in (minor_col_found, mdc_col_found, voc_col_found, pw_col_found) if c_}
         for _c in _bl_cols:
-            _work[f"__b__{_c}"] = _work[_c].isna() | (_work[_c].astype(str).str.strip() == "")
+            _fl = _work[_c].isna() | (_work[_c].astype(str).str.strip() == "")
+            if _c in _cat_set:
+                _fl = _fl & ~_ex_s          # ⚪ खाली-छूट वाली डिग्री+ब्रांच में Minor..PW का खाली नहीं गिनना
+            _work[f"__b__{_c}"] = _fl
         _flag_cols = [f"__b__{_c}" for _c in _bl_cols]
         _work["__any__"] = _work[_flag_cols].any(axis=1)
+        if int(_ex_s.sum()) > 0:
+            st.caption(f"⚪ खाली-छूट वाली डिग्री+ब्रांच के {int(_ex_s.sum())} छात्रों के Minor/MDC/Voc/PW यहाँ गिने नहीं गए (सेटिंग ऊपर 'खाली-छूट सेटिंग' में है)।")
 
         _agg = {"कुल छात्र (Total)": ("__any__", "size"), "🔵 खाली वाले छात्र": ("__any__", "sum")}
         for _c in _bl_cols:
@@ -1879,16 +1965,21 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             else:
                                 _db["_rd"] = None
 
+                            # ⚪ खाली-छूट वाली डिग्री+ब्रांच (UG/PG की सेटिंग)
+                            _ex_pairs = get_blank_exempt_pairs("ug" if _scope == "UG" else "pg")
+                            _ex_s = pd.Series([(d_, b_) in _ex_pairs for d_, b_ in zip(_db["Degree (डिग्री)"], _db["Branch (ब्रांच)"])], index=_db.index)
+
                             # हर श्रेणी के लिए गलत / खाली फ्लैग
                             for _lbl, _rk, _cn in _present_cats:
-                                _blank_s = _db[_cn].isna() | (_db[_cn].astype(str).str.strip() == "")
+                                _empty_s = _db[_cn].isna() | (_db[_cn].astype(str).str.strip() == "")
+                                _blank_s = _empty_s & ~_ex_s     # ⚪ खाली-छूट वाली डिग्री+ब्रांच में खाली नहीं गिनना
                                 _norm_s = _db[_cn].astype(str).map(_norm_txt)
                                 _wrong_s = pd.Series(False, index=_db.index)
                                 if _scope == "UG":
                                     for _rd_name in _db["_rd"].dropna().unique():
                                         _allowed = {_norm_txt(x) for x in ((ug_master_rules.get(_rd_name) or {}).get(_rk, []))}
                                         if _allowed:
-                                            _wrong_s = _wrong_s | ((_db["_rd"] == _rd_name) & ~_blank_s & ~_norm_s.isin(_allowed))
+                                            _wrong_s = _wrong_s | ((_db["_rd"] == _rd_name) & ~_empty_s & ~_norm_s.isin(_allowed))
                                 _db[f"_w_{_rk}"] = _wrong_s
                                 _db[f"_b_{_rk}"] = _blank_s
 
@@ -2065,13 +2156,16 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         actual_pw: 'pw'
                     }
                     
-                    for index, row in df_to_show.iterrows():
+                    _ex_prefix = "ug" if _scope == "UG" else ("pg" if _scope == "PG" else None)
+                    _ex_list = blank_exempt_mask(df_to_show, _ex_prefix).tolist()   # ⚪ खाली-छूट वाली रो
+                    for _pos, (index, row) in enumerate(df_to_show.iterrows()):
                         _row_rules = _rules_for_row(row)
                         for col_name, rule_key in targets_for_counting.items():
                             if col_name and col_name in df_to_show.columns:
                                 val = row[col_name]
                                 if pd.isna(val) or str(val).strip() == "":
-                                    blank_count += 1
+                                    if not _ex_list[_pos]:
+                                        blank_count += 1
                                 else:
                                     val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
                                     valid_list = _row_rules.get(rule_key, [])
@@ -2102,14 +2196,15 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             actual_voc: 'voc', 
                             actual_pw: 'pw'
                         }
-                        for index, row in dataframe.iterrows():
+                        for _pos, (index, row) in enumerate(dataframe.iterrows()):
                             row_has_wrong = False
                             _row_rules = _rules_for_row(row)
                             for col_name, rule_key in targets.items():
                                 if col_name and col_name in dataframe.columns:
                                     val = row[col_name]
                                     if pd.isna(val) or str(val).strip() == "":
-                                        s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
+                                        if not _ex_list[_pos]:
+                                            s_df.at[index, col_name] = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
                                     else:
                                         val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
                                         valid_list = _row_rules.get(rule_key, [])
@@ -2400,7 +2495,7 @@ elif active_panel == "⚙️ 6. Admin Panel":
                 ug_colored = generate_colored_excel_bytes(
                     df_ug_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
                     master_rules=_admin_ug_rules, sheet_name="UG_Backup",
-                    approved_keys=_ug_approved_keys, key_col=_ug_key_col
+                    approved_keys=_ug_approved_keys, key_col=_ug_key_col, prefix="ug"
                 )
                 st.download_button(
                     label="📥 रंगीन (🔴/🔵) UG डेटा एक्सेल डाउनलोड करें",
@@ -2428,7 +2523,7 @@ elif active_panel == "⚙️ 6. Admin Panel":
                 pg_colored = generate_colored_excel_bytes(
                     df_pg_download, deg_c, br_c, min_c, mdc_c, voc_c, pw_c,
                     master_rules=None, sheet_name="PG_Backup",
-                    approved_keys=_pg_approved_keys, key_col=_pg_key_col
+                    approved_keys=_pg_approved_keys, key_col=_pg_key_col, prefix="pg"
                 )
                 st.download_button(
                     label="📥 रंगीन (🔵) PG डेटा एक्सेल डाउनलोड करें",
