@@ -670,6 +670,105 @@ import io
 from openpyxl.styles import PatternFill, Border, Side
 
 # =========================================================================
+# 🔀 UG / PG रूटिंग: कौन सी डिग्री किस डेटाबेस (UG या PG) में जाएगी + गलत जगह गई डिग्री को ठीक करना
+# =========================================================================
+# P2 का ऑटो-विभाजन और P4 (PG Panel) का फ़िल्टर — दोनों यही एक सूची इस्तेमाल करते हैं, ताकि कोई डिग्री
+# P2 में PG में तो जाए पर P4 में दिखे ही नहीं (या उल्टा) — ऐसा न हो। (LL.M. और M.Tech पहले इस सूची में नहीं थे।)
+PG_ROUTE_KEYWORDS = ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "grad", "llm", "mtech"]
+# P3 (UG Panel) में जो डिग्री दिखाई जाती हैं
+UG_ALLOWED_KEYWORDS = ["ba", "bsc", "bcom", "bhsc", "bba", "bca", "computer"]
+
+def is_pg_route_value(v):
+    val = str(v).lower().replace(".", "").replace(" ", "").strip()
+    return any(k in val for k in PG_ROUTE_KEYWORDS)
+
+def move_degree_rows(from_type, to_type, deg_labels):
+    """चुनी हुई डिग्री की सारी रोज़ perma_store में from_type ('UG'/'PG') से to_type में ले जाना।
+    (moved_count, error_message_or_None) लौटाता है। Approve हो चुके छात्रों का Approval भी साथ जाता है।"""
+    df_from = load_permanent_data(from_type)
+    if df_from is None or df_from.empty:
+        return 0, None
+    dc, _ = detect_deg_branch_cols(df_from)
+    if not dc:
+        return 0, "डिग्री कॉलम नहीं मिला, इसलिए रोज़ नहीं भेजी जा सकीं।"
+    mask = df_from[dc].map(_norm_blank_label).isin(set(deg_labels))
+    if not mask.any():
+        return 0, None
+
+    from_pf, to_pf = from_type.lower(), to_type.lower()
+    # रोल/एनरोलमेंट के बिना बने 'row-N' वाले Approval रो की जगह पर टिके होते हैं — रोज़ हटीं तो खिसक जाएँगे
+    if any(str(a[0]).startswith("row-") for a in get_all_approvals(from_pf)):
+        return 0, (f"{from_type} में कुछ Approval बिना Roll/Enrollment वाली रो-पोज़ीशन पर टिके हैं; "
+                   "रोज़ भेजने पर वे खिसक जाएँगे, इसलिए भेजना रोका गया।")
+
+    key_col = find_student_key_col(df_from)
+    moved = df_from[mask]
+    stay = df_from[~mask]
+
+    cursor.execute("DELETE FROM perma_store WHERE course_type = ?", (from_type,))
+    if not stay.empty:
+        cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)",
+                       (json.dumps(stay.to_dict(orient="records")), from_type))
+    cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)",
+                   (json.dumps(moved.to_dict(orient="records")), to_type))
+
+    if key_col:
+        for k in moved[key_col].tolist():
+            if pd.isna(k) or not str(k).strip():
+                continue
+            k = str(k).strip()
+            ap = get_approval(k, from_pf)
+            if ap:
+                cursor.execute("""
+                    INSERT INTO subject_approvals (student_key, panel_prefix, approved_by, approved_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(student_key, panel_prefix) DO UPDATE SET
+                        approved_by = excluded.approved_by, approved_at = excluded.approved_at
+                """, (k, to_pf, ap[0], ap[1]))
+                cursor.execute("DELETE FROM subject_approvals WHERE student_key = ? AND panel_prefix = ?", (k, from_pf))
+    conn.commit()
+    return int(mask.sum()), None
+
+def render_degree_mover(df, from_type, to_type):
+    """P3/P4 में: डिग्री चुनकर उसे एक डेटाबेस से दूसरे में भेजने का बॉक्स।"""
+    _msg_key = f"mv_done_msg_{from_type}"
+    if st.session_state.get(_msg_key):
+        st.success(st.session_state.pop(_msg_key))
+
+    dc, _ = detect_deg_branch_cols(df)
+    if not dc:
+        return
+    labels = df[dc].map(_norm_blank_label)
+    counts = labels.value_counts()
+    suggest = [d for d in counts.index if from_type == "UG" and is_pg_route_value(d)]
+    if suggest:
+        st.warning(
+            f"⚠️ UG डेटाबेस में ये डिग्री मिली हैं जो PG की लगती हैं: "
+            + ", ".join(f"**{d}** ({int(counts[d])} छात्र)" for d in suggest)
+            + " — ये P3 में नहीं दिखेंगी, और PG डेटाबेस में न होने से P4 में भी नहीं दिखेंगी (सिर्फ Dashboard में दिखती हैं)। नीचे से इन्हें PG में भेजें।"
+        )
+    with st.expander(f"🔀 डिग्री को {from_type} डेटाबेस से {to_type} डेटाबेस में भेजें", expanded=bool(suggest)):
+        st.caption(f"अगर कोई डिग्री गलती से {from_type} में चली गई है, तो उसे यहाँ चुनकर {to_type} में भेजें — उसके बाद वह {to_type} पैनल में दिखेगी। (P2 में नई फ़ाइल आने पर सही जगह अपने-आप जाएगी।)")
+        _sig = hashlib.md5("|".join(map(str, counts.index)).encode("utf-8")).hexdigest()[:8]
+        _sel = st.multiselect(
+            f"{to_type} में भेजने वाली डिग्री:",
+            options=list(counts.index),
+            default=suggest,
+            format_func=lambda d: f"{d} ({int(counts[d])} छात्र)",
+            key=f"mv_sel_{from_type}_{_sig}"
+        )
+        if st.button(f"➡️ चुनी हुई डिग्री {to_type} में भेजें", key=f"mv_btn_{from_type}_{_sig}"):
+            if not _sel:
+                st.warning("पहले कोई डिग्री चुनें।")
+            else:
+                n_moved, err = move_degree_rows(from_type, to_type, _sel)
+                if err:
+                    st.error(err)
+                else:
+                    st.session_state[_msg_key] = f"🎉 {', '.join(_sel)} की {n_moved} रोज़ {from_type} से {to_type} डेटाबेस में भेज दी गईं।"
+                    st.rerun()
+
+# =========================================================================
 # ⚪ खाली-छूट (Blank Exemption): जिन डिग्री+ब्रांच में Minor/MDC/Voc/PW हमेशा खाली रहते हैं
 # =========================================================================
 def _norm_blank_label(v):
@@ -1532,8 +1631,7 @@ elif active_panel == "💻 2. Work / Approve Panel":
         pg_preview_rows = []
         
         for _, row in final_raw_df.iterrows():
-            val = str(row[el_col]).lower().replace(".", "").replace(" ", "").strip()
-            if any(k in val for k in ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "grad"]):
+            if is_pg_route_value(row[el_col]):
                 pg_preview_rows.append(row.to_dict())
             else:
                 ug_preview_rows.append(row.to_dict())
@@ -1580,6 +1678,20 @@ elif active_panel == "🎓 3. UG Panel":
     if df_ug is None or df_ug.empty: 
         st.info("ℹ️ UG डेटाबेस खाली है। कृपया पहले Panel 2 से डेटा अप्रूव करें।")
     else:
+        # 🔀 UG डेटाबेस में गलती से आ गई PG डिग्री (जैसे LL.M.) को पहचानना/PG में भेजना
+        render_degree_mover(df_ug, "UG", "PG")
+
+        # ℹ️ UG डेटाबेस की वो डिग्री जो इस पैनल की डिग्री-सूची में नहीं आतीं (इसलिए यहाँ नहीं दिखेंगी)
+        _ug_dc, _ = detect_deg_branch_cols(df_ug)
+        if _ug_dc:
+            _hidden_ug = sorted({
+                d for d in df_ug[_ug_dc].map(_norm_blank_label).unique()
+                if not any(k in d.lower().replace(".", "").replace(" ", "") for k in UG_ALLOWED_KEYWORDS)
+                and not is_pg_route_value(d)
+            })
+            if _hidden_ug:
+                st.info("ℹ️ UG डेटाबेस में ये डिग्री हैं पर इस पैनल की डिग्री-सूची (BA, B.Sc., B.Com., B.H.Sc., BBA, BCA...) में नहीं आतीं, इसलिए इस पैनल की टेबल में नहीं दिखेंगी (Dashboard में दिखेंगी): " + ", ".join(_hidden_ug))
+
         # ऑटो-कॉलम डिटेक्शन
         minor_col = next((c for c in df_ug.columns if 'minor' in c.lower()), None)
         mdc_col = next((c for c in df_ug.columns if 'mdc' in c.lower()), None)
@@ -1654,7 +1766,7 @@ elif active_panel == "🎓 3. UG Panel":
         
         # लाइव वैलिडेशन टेबल रन करना (डेटाबेस से लोड किए गए नियमों को प्राथमिकता दें)
         rules_to_apply = ug_master_rules if ug_master_rules else current_configured_rules
-        allowed_ug = ["ba", "bsc", "bcom", "bhsc", "bba", "bca", "computer"]
+        allowed_ug = list(UG_ALLOWED_KEYWORDS)
         
         process_panel_validation(df_ug, "ug", allowed_ug, master_rules=rules_to_apply)
 
@@ -1671,7 +1783,9 @@ elif active_panel == "📜 4. PG Panel":
     if df_pg is None or df_pg.empty: 
         st.info("ℹ️ PG डेटाबेस खाली है।")
     else: 
-        process_panel_validation(df_pg, "pg", ["ma", "msc", "mcom", "mba", "mca", "post grad", "pg", "mtech", "llm"])
+        # 🔀 PG डेटाबेस में गलती से आ गई UG डिग्री को वापस UG में भेजने का विकल्प
+        render_degree_mover(df_pg, "PG", "UG")
+        process_panel_validation(df_pg, "pg", list(PG_ROUTE_KEYWORDS))
 
 # =========================================================================
 # 📊 PANEL 5: DASHBOARD / COUNTER PANEL (फुल स्क्रीन व्यूअर - भाग 1 और भाग 2 आपस में हाइड/शो)
