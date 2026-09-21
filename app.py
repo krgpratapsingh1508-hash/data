@@ -1320,7 +1320,7 @@ def excel_bytes_to_csv_bytes(raw, sheet_name=0):
 # =========================================================================
 # 📊 डिग्री+ब्रांच समरी → रंगीन Excel (लाल/नीली रो + कारण कॉलम)
 # =========================================================================
-def generate_summary_excel_bytes(summary_df, sheet_name="Summary"):
+def generate_summary_excel_bytes(summary_df, sheet_name="Summary", students_df=None, student_flags=None, students_sheet_name="Reason_Students"):
     from openpyxl.styles import PatternFill, Border, Side, Font, Alignment
     from openpyxl.utils import get_column_letter
 
@@ -1382,6 +1382,63 @@ def generate_summary_excel_bytes(summary_df, sheet_name="Summary"):
 
         ws.freeze_panes = "C2"
         ws.auto_filter.ref = ws.dimensions
+
+        # 📄 शीट 2: Reason वाले छात्रों की लिस्ट (जिनका Minor/MDC/Voc/PW गलत या खाली है)
+        if students_df is not None:
+            safe_sheet2 = "".join(ch for ch in str(students_sheet_name) if ch not in '[]:*?/\\')[:31] or "Reason_Students"
+            if safe_sheet2 == safe_sheet:
+                safe_sheet2 = (safe_sheet2[:28] + "_2")
+            if students_df.empty:
+                pd.DataFrame({"सूचना": ["कोई भी गलत (🔴) या खाली (🔵) एंट्री वाला छात्र नहीं मिला।"]}).to_excel(
+                    writer, index=False, sheet_name=safe_sheet2)
+                ws2 = writer.sheets[safe_sheet2]
+                ws2.column_dimensions["A"].width = 70
+            else:
+                students_df.to_excel(writer, index=False, sheet_name=safe_sheet2)
+                ws2 = writer.sheets[safe_sheet2]
+                cols2 = list(students_df.columns)
+                reason_i2 = next((i for i, c in enumerate(cols2) if "Reason" in str(c)), None)
+                for c_i in range(1, len(cols2) + 1):
+                    cell = ws2.cell(row=1, column=c_i)
+                    cell.fill = head_fill
+                    cell.font = Font(bold=True, color="FFFFFF")
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    cell.border = border
+                flags = student_flags or {}
+                for r_i in range(len(students_df)):
+                    row_has_w = False
+                    row_has_b = False
+                    for c_i0, cname in enumerate(cols2):
+                        cell = ws2.cell(row=r_i + 2, column=c_i0 + 1)
+                        cell.border = border
+                        cell.alignment = Alignment(vertical="top", wrap_text=(c_i0 == reason_i2))
+                        f_list = flags.get(cname)
+                        f = f_list[r_i] if f_list is not None else ""
+                        if f == "w":
+                            cell.fill = red_fill
+                            cell.font = Font(bold=True, color="721C24")
+                            row_has_w = True
+                        elif f == "b":
+                            cell.fill = blue_fill
+                            cell.font = Font(bold=True, color="0C5460")
+                            row_has_b = True
+                    if reason_i2 is not None:
+                        rc = ws2.cell(row=r_i + 2, column=reason_i2 + 1)
+                        if row_has_w:
+                            rc.fill = red_fill
+                            rc.font = Font(bold=True, color="721C24")
+                        elif row_has_b:
+                            rc.fill = blue_fill
+                            rc.font = Font(bold=True, color="0C5460")
+                for c_i, name in enumerate(cols2):
+                    if c_i == reason_i2:
+                        width = 70
+                    else:
+                        longest = max([len(str(name))] + [len(str(v)) for v in students_df.iloc[:, c_i].tolist()[:500]])
+                        width = min(max(longest + 3, 10), 32)
+                    ws2.column_dimensions[get_column_letter(c_i + 1)].width = width
+                ws2.freeze_panes = "B2"
+                ws2.auto_filter.ref = ws2.dimensions
     return output.getvalue()
 
 # =========================================================================
@@ -2074,6 +2131,33 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                         out.append("")
                                 return out
 
+                            # 📄 शीट 2 के लिए: Reason वाले (गलत/खाली) छात्रों की व्यक्तिगत लिस्ट
+                            _any_flag = pd.Series(False, index=_db.index)
+                            for _lbl, _rk, _cn in _present_cats:
+                                _any_flag = _any_flag | _db[f"_w_{_rk}"] | _db[f"_b_{_rk}"]
+                            _stu = _db[_any_flag].sort_values(["Degree (डिग्री)", "Branch (ब्रांच)"], kind="stable")
+                            _orig_cols = [c for c in df_deg_filtered.columns if c in _stu.columns]
+
+                            def _stu_reason(r):
+                                out_ = []
+                                for _lbl, _rk, _cn in _present_cats:
+                                    if r[f"_w_{_rk}"]:
+                                        _rd_ = r["_rd"] if r["_rd"] else "इस डिग्री"
+                                        out_.append(f"🔴 {_lbl}: '{str(r[_cn]).strip()}' — {_rd_} के मास्टर नियम में मान्य नहीं")
+                                    elif r[f"_b_{_rk}"]:
+                                        out_.append(f"🔵 {_lbl}: खाली (डेटा नहीं भरा गया)")
+                                return "\n".join(out_)
+
+                            students_df = _stu[_orig_cols].copy().reset_index(drop=True)
+                            students_df.insert(0, "क्र.सं.", range(1, len(students_df) + 1))
+                            students_df["📝 कारण (Reason)"] = [_stu_reason(r_) for _, r_ in _stu.iterrows()]
+                            student_flags = {}
+                            for _lbl, _rk, _cn in _present_cats:
+                                student_flags[_cn] = [
+                                    "w" if w_ else ("b" if b_ else "")
+                                    for w_, b_ in zip(_stu[f"_w_{_rk}"].tolist(), _stu[f"_b_{_rk}"].tolist())
+                                ]
+
                             dm1, dm2, dm3 = st.columns(3)
                             with dm1:
                                 st.metric("🎓 कुल डिग्री+ब्रांच कॉम्बिनेशन", len(db_summary))
@@ -2099,6 +2183,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                         st.text(_rr["📝 कारण (Reason)"].replace("  ||  ", "\n"))
                         else:
                             # इस डेटा में Minor/MDC/Voc/PW में से कोई कॉलम नहीं है — तब भी डिग्री+ब्रांच की गिनती दिखाना
+                            students_df, student_flags = None, None
                             st.info("ℹ️ इस डेटा में Minor / MDC / Vocational / Project-PW में से किसी का कॉलम नहीं मिला, इसलिए नीचे सिर्फ डिग्री + ब्रांच के हिसाब से छात्रों की कुल संख्या दिखाई जा रही है।")
                             st.caption("इस डेटा में उपलब्ध कॉलम: " + ", ".join(str(c) for c in df_deg_filtered.columns))
                             db_summary = (
@@ -2129,8 +2214,14 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             )
                         with _dl2:
                             st.download_button(
-                                label="📊 यह समरी Excel (XLSX) में डाउनलोड करें (रंगीन)",
-                                data=generate_summary_excel_bytes(db_summary, sheet_name=f"{deg_info['display']}_Summary"),
+                                label="📊 यह समरी Excel (XLSX) में डाउनलोड करें (रंगीन • 2 शीट: समरी + Reason वाले छात्र)",
+                                data=generate_summary_excel_bytes(
+                                    db_summary,
+                                    sheet_name=f"{deg_info['display']}_Summary",
+                                    students_df=students_df,
+                                    student_flags=student_flags,
+                                    students_sheet_name="Reason_Students"
+                                ),
                                 file_name=f"{deg_info['display']}_Degree_Branch_All_Categories_Summary.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 key=f"db_dl_xlsx_{deg_info['display']}_all",
