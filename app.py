@@ -1097,8 +1097,8 @@ def generate_summary_excel_bytes(summary_df, sheet_name="Summary"):
         head_fill = PatternFill("solid", start_color="1A3C6E", end_color="1A3C6E")
 
         cols = list(summary_df.columns)
-        wrong_idx = next((i for i, c in enumerate(cols) if "Wrong" in str(c)), None)
-        blank_idx = next((i for i, c in enumerate(cols) if "Blank" in str(c)), None)
+        red_idx = [i for i, c in enumerate(cols) if "🔴" in str(c)]      # "गलत" वाले कॉलम
+        blue_idx = [i for i, c in enumerate(cols) if "🔵" in str(c)]     # "खाली" वाले कॉलम
         reason_idx = next((i for i, c in enumerate(cols) if "Reason" in str(c)), None)
 
         # हेडर
@@ -1109,17 +1109,24 @@ def generate_summary_excel_bytes(summary_df, sheet_name="Summary"):
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border
 
-        # डेटा रो: गलत > 0 = लाल, खाली > 0 = नीली
+        # डेटा रो: गलत > 0 = लाल सेल, खाली > 0 = नीला सेल, कारण सेल = लाल (गलत हो तो) वरना नीला
         for r_i, (_, row) in enumerate(summary_df.iterrows(), start=2):
-            fill, fcolor = None, "000000"
-            if wrong_idx is not None and row.iloc[wrong_idx] > 0:
-                fill, fcolor = red_fill, "721C24"
-            elif blank_idx is not None and row.iloc[blank_idx] > 0:
-                fill, fcolor = blue_fill, "0C5460"
-            for c_i in range(1, len(cols) + 1):
-                cell = ws.cell(row=r_i, column=c_i)
+            any_w = any(row.iloc[i] > 0 for i in red_idx)
+            any_b = any(row.iloc[i] > 0 for i in blue_idx)
+            for c_i0 in range(len(cols)):
+                cell = ws.cell(row=r_i, column=c_i0 + 1)
                 cell.border = border
-                cell.alignment = Alignment(vertical="top", wrap_text=(reason_idx is not None and c_i - 1 == reason_idx))
+                is_reason = (c_i0 == reason_idx)
+                cell.alignment = Alignment(vertical="top", wrap_text=is_reason)
+                fill, fcolor = None, "000000"
+                if c_i0 in red_idx and row.iloc[c_i0] > 0:
+                    fill, fcolor = red_fill, "721C24"
+                elif c_i0 in blue_idx and row.iloc[c_i0] > 0:
+                    fill, fcolor = blue_fill, "0C5460"
+                elif is_reason and str(row.iloc[c_i0]).strip():
+                    fill, fcolor = (red_fill, "721C24") if any_w else ((blue_fill, "0C5460") if any_b else (None, "000000"))
+                if is_reason:
+                    cell.value = str(row.iloc[c_i0]).replace("  ||  ", "\n")   # हर श्रेणी नई लाइन में
                 if fill is not None:
                     cell.fill = fill
                     cell.font = Font(bold=True, color=fcolor)
@@ -1127,13 +1134,13 @@ def generate_summary_excel_bytes(summary_df, sheet_name="Summary"):
         # कॉलम चौड़ाई (कारण कॉलम चौड़ा + टेक्स्ट रैप)
         for c_i, name in enumerate(cols):
             if c_i == reason_idx:
-                width = 90
+                width = 100
             else:
                 longest = max([len(str(name))] + [len(str(v)) for v in summary_df.iloc[:, c_i].tolist()])
                 width = min(max(longest + 3, 12), 40)
             ws.column_dimensions[get_column_letter(c_i + 1)].width = width
 
-        ws.freeze_panes = "A2"
+        ws.freeze_panes = "C2"
         ws.auto_filter.ref = ws.dimensions
     return output.getvalue()
 
@@ -1677,12 +1684,12 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         st.caption("डेटाबेस में संबंधित कॉलम नहीं मिला।")
 
                     # ---------------------------------------------------------------------
-                    # 🎓 केवल UG / PG टैब: डिग्री + ब्रांच-वाइज समरी (चुनी हुई श्रेणी के लिए)
+                    # 🎓 केवल UG / PG टैब: डिग्री + ब्रांच-वाइज समरी (Minor + MDC + Voc + PW सभी एक साथ)
                     # ---------------------------------------------------------------------
                     if _scope:
                         st.divider()
-                        st.markdown(f"### 🎓 डिग्री + ब्रांच-वाइज समरी — {selected_category}")
-                        st.caption("हर डिग्री और ब्रांच के सामने कुल छात्र, और चुनी हुई श्रेणी में कितने सही (✅), गलत (🔴) और खाली (🔵) हैं। 🔴 लाल रो = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय | 🔵 नीली रो = डेटा खाली है (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)। 📝 कारण कॉलम में लाल/नीली रो का पूरा कारण लिखा आता है।")
+                        st.markdown("### 🎓 डिग्री + ब्रांच-वाइज समरी — Minor + MDC + Voc + PW (सभी एक साथ)")
+                        st.caption("हर डिग्री और ब्रांच के सामने कुल छात्र, और Minor / MDC / Vocational / Project-PW हर श्रेणी में कितने सही (✅), गलत (🔴) और खाली (🔵) हैं। 🔴 लाल सेल = उस डिग्री के मास्टर नियम से मेल न खाने वाला विषय | 🔵 नीला सेल = डेटा खाली है (PG में अभी कोई मास्टर नियम नहीं है, इसलिए वहाँ लाल नहीं दिखेगा)। 📝 कारण कॉलम में हर श्रेणी का पूरा कारण लिखा आता है।")
 
                         _db = df_deg_filtered.copy()
 
@@ -1704,14 +1711,11 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         _db["Degree (डिग्री)"] = _clean_key(_db[_dc]) if _dc else "—"
                         _db["Branch (ब्रांच)"] = _clean_key(_db[_bc]) if _bc else "—"
 
-                        _c_col = current_cat["col_name"] if (current_cat["col_name"] and current_cat["col_name"] in _db.columns) else None
-                        _c_rk = current_cat["rule_key"]
-
                         _deg_options = ["सभी डिग्री"] + sorted(_db["Degree (डिग्री)"].unique().tolist())
                         _deg_pick = st.selectbox(
                             "डिग्री फ़िल्टर:",
                             _deg_options,
-                            key=f"db_deg_filter_{deg_info['display']}_{_c_rk}"
+                            key=f"db_deg_filter_{deg_info['display']}_all"
                         )
                         if _deg_pick != "सभी डिग्री":
                             _db = _db[_db["Degree (डिग्री)"] == _deg_pick]
@@ -1719,83 +1723,111 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                         _red = 'background-color: #f8d7da; color: #721c24; font-weight: bold; border: 2px solid #dc3545;'
                         _blue = 'background-color: #d1ecf1; color: #0c5460; font-weight: bold; border: 2px solid #17a2b8;'
 
-                        if _c_col:
-                            def _wrong_flag_db(r):
-                                v = r[_c_col]
-                                if pd.isna(v) or str(v).strip() == "":
-                                    return False
-                                vs = {_norm_txt(x) for x in _rules_for_row(r).get(_c_rk, [])}
-                                return bool(vs) and (_norm_txt(v) not in vs)
+                        # चारों श्रेणियाँ एक साथ: Minor / MDC / Voc / PW
+                        _all_cats = [("Minor", "minor", minor_col), ("MDC", "mdc", mdc_col), ("Voc", "voc", voc_col), ("PW", "pw", pw_col)]
+                        _present_cats = [(l_, k_, c_) for (l_, k_, c_) in _all_cats if c_ and c_ in _db.columns]
+                        _missing_cats = [l_ for (l_, k_, c_) in _all_cats if not (c_ and c_ in _db.columns)]
 
-                            _db["_wrong"] = _db.apply(_wrong_flag_db, axis=1)
-                            _db["_blank"] = _db[_c_col].isna() | (_db[_c_col].astype(str).str.strip() == "")
+                        if _present_cats:
+                            if _missing_cats:
+                                st.caption("ℹ️ इस डेटा में इन श्रेणियों का कॉलम नहीं मिला, इसलिए ये समरी में शामिल नहीं हैं: " + ", ".join(_missing_cats))
 
-                            db_summary = (
-                                _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"])
-                                .agg(_total=("_wrong", "size"), _wrong=("_wrong", "sum"), _blank=("_blank", "sum"))
-                                .reset_index()
-                            )
-                            db_summary["_wrong"] = db_summary["_wrong"].astype(int)
-                            db_summary["_blank"] = db_summary["_blank"].astype(int)
-                            db_summary["_ok"] = db_summary["_total"] - db_summary["_wrong"] - db_summary["_blank"]
+                            # हर छात्र की डिग्री के हिसाब से मास्टर-नियम वाली डिग्री (एक बार निकालना)
+                            if _scope == "UG" and len(_db):
+                                _db["_rd"] = _db.apply(_row_degree_name, axis=1)
+                            else:
+                                _db["_rd"] = None
 
-                            # 📝 कारण (Reason): लाल / नीली रो का पूरा कारण — कौन सा विषय गलत है (कितने छात्र) और कितने खाली हैं
-                            def _build_reason(g):
-                                parts = []
-                                w = g[g["_wrong"]]
-                                if len(w):
-                                    if _scope == "UG":
-                                        w = w.assign(_rd=w.apply(lambda r: _row_degree_name(r) or deg_info["display"], axis=1))
-                                    else:
-                                        w = w.assign(_rd=deg_info["display"])
-                                    for _rd, _wg in w.groupby("_rd"):
-                                        _vc = _wg[_c_col].astype(str).str.strip().value_counts()
-                                        _subj_txt = ", ".join(f"{k} ({v})" for k, v in _vc.items())
-                                        parts.append(f"🔴 {len(_wg)} छात्रों का {selected_category} विषय {_rd} के मास्टर नियम में मान्य नहीं है → {_subj_txt}")
-                                _b = int(g["_blank"].sum())
-                                if _b:
-                                    parts.append(f"🔵 {_b} छात्रों का {selected_category} खाली है (डेटा नहीं भरा गया)")
-                                return "  ||  ".join(parts)
+                            # हर श्रेणी के लिए गलत / खाली फ्लैग
+                            for _lbl, _rk, _cn in _present_cats:
+                                _blank_s = _db[_cn].isna() | (_db[_cn].astype(str).str.strip() == "")
+                                _norm_s = _db[_cn].astype(str).map(_norm_txt)
+                                _wrong_s = pd.Series(False, index=_db.index)
+                                if _scope == "UG":
+                                    for _rd_name in _db["_rd"].dropna().unique():
+                                        _allowed = {_norm_txt(x) for x in ((ug_master_rules.get(_rd_name) or {}).get(_rk, []))}
+                                        if _allowed:
+                                            _wrong_s = _wrong_s | ((_db["_rd"] == _rd_name) & ~_blank_s & ~_norm_s.isin(_allowed))
+                                _db[f"_w_{_rk}"] = _wrong_s
+                                _db[f"_b_{_rk}"] = _blank_s
+
+                            _first_rk = _present_cats[0][1]
+                            _agg = {"_total": (f"_w_{_first_rk}", "size")}
+                            for _lbl, _rk, _cn in _present_cats:
+                                _agg[f"_w_{_rk}"] = (f"_w_{_rk}", "sum")
+                                _agg[f"_b_{_rk}"] = (f"_b_{_rk}", "sum")
+                            _grp = _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]).agg(**_agg).reset_index()
+
+                            # 📝 कारण (Reason): हर श्रेणी का पूरा कारण (कौन सा विषय गलत, कितने खाली)
+                            def _reason_for_group(g):
+                                lines = []
+                                for _lbl, _rk, _cn in _present_cats:
+                                    parts = []
+                                    w = g[g[f"_w_{_rk}"]]
+                                    if len(w):
+                                        for _rd_name, _wg in w.groupby("_rd"):
+                                            _vc = _wg[_cn].astype(str).str.strip().value_counts()
+                                            _subj = ", ".join(f"{k} ({v})" for k, v in _vc.items())
+                                            parts.append(f"🔴 {len(_wg)} छात्रों का विषय {_rd_name} के मास्टर नियम में मान्य नहीं है → {_subj}")
+                                    _bn = int(g[f"_b_{_rk}"].sum())
+                                    if _bn:
+                                        parts.append(f"🔵 {_bn} छात्रों का खाली है (डेटा नहीं भरा गया)")
+                                    if parts:
+                                        lines.append(f"{_lbl}: " + " ; ".join(parts))
+                                return "  ||  ".join(lines)
 
                             _reasons = {}
                             for (_d_k, _b_k), _g in _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]):
-                                _reasons[(_d_k, _b_k)] = _build_reason(_g)
-                            db_summary["_reason"] = [
-                                _reasons.get((_d_k, _b_k), "")
-                                for _d_k, _b_k in zip(db_summary["Degree (डिग्री)"], db_summary["Branch (ब्रांच)"])
-                            ]
+                                _reasons[(_d_k, _b_k)] = _reason_for_group(_g)
 
-                            db_summary = db_summary[["Degree (डिग्री)", "Branch (ब्रांच)", "_total", "_ok", "_wrong", "_blank", "_reason"]]
-                            db_summary.columns = [
-                                "Degree (डिग्री)", "Branch (ब्रांच)",
-                                "कुल छात्र (Total)", "✅ सही (Correct)", "🔴 गलत (Wrong)", "🔵 खाली (Blank)",
-                                "📝 कारण (Reason)"
+                            db_summary = _grp[["Degree (डिग्री)", "Branch (ब्रांच)"]].copy()
+                            db_summary["कुल छात्र (Total)"] = _grp["_total"].astype(int)
+                            for _lbl, _rk, _cn in _present_cats:
+                                _w_col = _grp[f"_w_{_rk}"].astype(int)
+                                _b_col = _grp[f"_b_{_rk}"].astype(int)
+                                db_summary[f"{_lbl} ✅ सही"] = db_summary["कुल छात्र (Total)"] - _w_col - _b_col
+                                db_summary[f"{_lbl} 🔴 गलत"] = _w_col
+                                db_summary[f"{_lbl} 🔵 खाली"] = _b_col
+                            db_summary["📝 कारण (Reason)"] = [
+                                _reasons.get((_d_k, _b_k), "")
+                                for _d_k, _b_k in zip(_grp["Degree (डिग्री)"], _grp["Branch (ब्रांच)"])
                             ]
                             db_summary = db_summary.sort_values(
                                 ["Degree (डिग्री)", "कुल छात्र (Total)"], ascending=[True, False]
                             ).reset_index(drop=True)
 
-                            def _db_row_styler(row):
-                                if row["🔴 गलत (Wrong)"] > 0:
-                                    return [_red] * len(row)
-                                if row["🔵 खाली (Blank)"] > 0:
-                                    return [_blue] * len(row)
-                                return [''] * len(row)
+                            _wrong_cols = [c for c in db_summary.columns if "🔴" in c]
+                            _blank_cols = [c for c in db_summary.columns if "🔵" in c]
+
+                            def _db_cell_styler(row):
+                                _any_w = any(row[c] > 0 for c in _wrong_cols)
+                                _any_b = any(row[c] > 0 for c in _blank_cols)
+                                out = []
+                                for c in row.index:
+                                    if c in _wrong_cols and row[c] > 0:
+                                        out.append(_red)
+                                    elif c in _blank_cols and row[c] > 0:
+                                        out.append(_blue)
+                                    elif c == "📝 कारण (Reason)" and row[c]:
+                                        out.append(_red if _any_w else (_blue if _any_b else ""))
+                                    else:
+                                        out.append("")
+                                return out
 
                             dm1, dm2, dm3 = st.columns(3)
                             with dm1:
                                 st.metric("🎓 कुल डिग्री+ब्रांच कॉम्बिनेशन", len(db_summary))
                             with dm2:
-                                st.metric("🔴 कुल गलत छात्र", int(db_summary["🔴 गलत (Wrong)"].sum()))
+                                st.metric("🔴 कुल गलत एंट्री (सभी श्रेणी)", int(db_summary[_wrong_cols].to_numpy().sum()))
                             with dm3:
-                                st.metric("🔵 कुल खाली सेल", int(db_summary["🔵 खाली (Blank)"].sum()))
+                                st.metric("🔵 कुल खाली सेल (सभी श्रेणी)", int(db_summary[_blank_cols].to_numpy().sum()))
 
                             st.dataframe(
-                                db_summary.style.apply(_db_row_styler, axis=1),
+                                db_summary.style.apply(_db_cell_styler, axis=1),
                                 hide_index=True,
                                 use_container_width=True,
                                 height=min(38 * (len(db_summary) + 1) + 3, 650),
-                                column_config={"📝 कारण (Reason)": st.column_config.TextColumn(width=700)}
+                                column_config={"📝 कारण (Reason)": st.column_config.TextColumn(width=900)}
                             )
 
                             # 📝 लंबा कारण टेबल के सेल में कट सकता है, इसलिए पूरा कारण यहाँ भी दिखाना
@@ -1806,8 +1838,8 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                         st.markdown(f"**{_rr['Degree (डिग्री)']} → {_rr['Branch (ब्रांच)']}**")
                                         st.text(_rr["📝 कारण (Reason)"].replace("  ||  ", "\n"))
                         else:
-                            # इस श्रेणी का कॉलम इस डेटा में नहीं है (जैसे PG में Minor/MDC) — तब भी डिग्री+ब्रांच की गिनती दिखाना
-                            st.info(f"ℹ️ इस डेटा में '{selected_category}' का कॉलम नहीं मिला, इसलिए नीचे सिर्फ डिग्री + ब्रांच के हिसाब से छात्रों की कुल संख्या दिखाई जा रही है।")
+                            # इस डेटा में Minor/MDC/Voc/PW में से कोई कॉलम नहीं है — तब भी डिग्री+ब्रांच की गिनती दिखाना
+                            st.info("ℹ️ इस डेटा में Minor / MDC / Vocational / Project-PW में से किसी का कॉलम नहीं मिला, इसलिए नीचे सिर्फ डिग्री + ब्रांच के हिसाब से छात्रों की कुल संख्या दिखाई जा रही है।")
                             st.caption("इस डेटा में उपलब्ध कॉलम: " + ", ".join(str(c) for c in df_deg_filtered.columns))
                             db_summary = (
                                 _db.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]).size().reset_index(name="कुल छात्र (Total)")
@@ -1830,18 +1862,18 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                             st.download_button(
                                 label="📥 यह समरी CSV में डाउनलोड करें",
                                 data=db_summary.to_csv(index=False).encode("utf-8-sig"),
-                                file_name=f"{deg_info['display']}_Degree_Branch_{_c_rk}_Summary.csv",
+                                file_name=f"{deg_info['display']}_Degree_Branch_All_Categories_Summary.csv",
                                 mime="text/csv",
-                                key=f"db_dl_{deg_info['display']}_{_c_rk}",
+                                key=f"db_dl_{deg_info['display']}_all",
                                 use_container_width=True
                             )
                         with _dl2:
                             st.download_button(
                                 label="📊 यह समरी Excel (XLSX) में डाउनलोड करें (रंगीन)",
-                                data=generate_summary_excel_bytes(db_summary, sheet_name=f"{deg_info['display']}_{_c_rk}"),
-                                file_name=f"{deg_info['display']}_Degree_Branch_{_c_rk}_Summary.xlsx",
+                                data=generate_summary_excel_bytes(db_summary, sheet_name=f"{deg_info['display']}_Summary"),
+                                file_name=f"{deg_info['display']}_Degree_Branch_All_Categories_Summary.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key=f"db_dl_xlsx_{deg_info['display']}_{_c_rk}",
+                                key=f"db_dl_xlsx_{deg_info['display']}_all",
                                 use_container_width=True
                             )
 
