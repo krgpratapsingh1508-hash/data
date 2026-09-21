@@ -376,6 +376,68 @@ st.markdown("""
         border: 1px solid #dde4f5; background: #f3f6fc; color: #3b4c73;
     }
     .dl-chip.red { background: #fdecee; border-color: #f5c2c7; color: #a61e2b; }
+    /* ============== 🏷️ सभी पैनल की हेडलाइन = ग्रेडिएंट बैनर (डिग्री+ब्रांच समरी जैसा) ============== */
+    .block-container div[data-testid="stHeading"] h1,
+    .block-container div[data-testid="stMarkdownContainer"] > h1,
+    .block-container div[data-testid="stHeading"] h2,
+    .block-container div[data-testid="stMarkdownContainer"] > h2,
+    .block-container div[data-testid="stHeading"] h3,
+    .block-container div[data-testid="stMarkdownContainer"] > h3 {
+        background: linear-gradient(135deg, #1a3c6e, #2f5fb3 60%, #5b4bdb);
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff;
+        border-radius: 14px;
+        padding: 13px 20px !important;
+        margin: 6px 0 12px 0 !important;
+        box-shadow: 0 8px 22px rgba(26, 60, 110, .25);
+        font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+        font-weight: 800 !important;
+        letter-spacing: -.2px;
+        line-height: 1.35 !important;
+        animation: floatIn .5s ease-out;
+    }
+    /* बैनर के अंदर की हर चीज़ (लिंक-आइकन समेत) सफ़ेद */
+    .block-container div[data-testid="stHeading"] h1 *,
+    .block-container div[data-testid="stMarkdownContainer"] > h1 *,
+    .block-container div[data-testid="stHeading"] h2 *,
+    .block-container div[data-testid="stMarkdownContainer"] > h2 *,
+    .block-container div[data-testid="stHeading"] h3 *,
+    .block-container div[data-testid="stMarkdownContainer"] > h3 * {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff;
+        fill: #ffffff;
+    }
+    /* बड़ा पैनल-टाइटल (st.title) */
+    .block-container div[data-testid="stHeading"] h1,
+    .block-container div[data-testid="stMarkdownContainer"] > h1 {
+        font-size: 25px !important;
+        padding: 16px 22px !important;
+    }
+    /* डैशबोर्ड बोर्ड आदि (##) : थोड़ा अलग नीला शेड */
+    .block-container div[data-testid="stHeading"] h2,
+    .block-container div[data-testid="stMarkdownContainer"] > h2 {
+        font-size: 22px !important;
+        background: linear-gradient(135deg, #1f4d8f, #3468c4 60%, #6a5be0);
+    }
+    /* सेक्शन हेडिंग (st.subheader / ###) */
+    .block-container div[data-testid="stHeading"] h3,
+    .block-container div[data-testid="stMarkdownContainer"] > h3 {
+        font-size: 19px !important;
+        padding: 11px 18px !important;
+        background: linear-gradient(135deg, #2b5aa8, #4a6fd6 60%, #6a5be0);
+        box-shadow: 0 6px 16px rgba(43, 90, 168, .22);
+    }
+    /* छोटी हेडिंग (####) : हल्का कार्ड + बाईं पट्टी */
+    .block-container div[data-testid="stMarkdownContainer"] > h4 {
+        background: linear-gradient(90deg, #eef3ff, #ffffff);
+        border-left: 6px solid #5b4bdb;
+        border-radius: 10px;
+        padding: 8px 14px !important;
+        margin: 8px 0 8px 0 !important;
+        color: #1a3c6e;
+        font-weight: 800;
+    }
+
     /* ============== 📋 लिस्ट / टेबल कार्ड डिज़ाइन ============== */
     div[data-testid="stDataFrame"] {
         border: 1px solid #d7e0f0;
