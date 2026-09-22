@@ -1,4 +1,4 @@
-supabase 
+psycopg2-binary
 streamlit
 pandas
 openpyxl
