@@ -882,50 +882,13 @@ def admin_section_toggle(key, title, caption=None, default_open=True):
 # =========================================================================
 # डेटाबेस सेटअप - टेबल्स संरचना (Raw, Permanent और Rules Lock)
 # =========================================================================
-import psycopg2
-
-class _SqliteCompatCursor:
-    """पुराने '?' placeholder वाले SQL को अपने-आप Postgres के '%s' में बदल देता है,
-    ताकि नीचे का बाकी सारा कोड (cursor.execute(...)) बिना बदले वैसा ही चलता रहे।
-    साथ ही, अगर connection कभी टूट जाए, तो अपने-आप दोबारा जोड़ता है।"""
-    def __init__(self, real_cursor):
-        self._cursor = real_cursor
-
-    def execute(self, query, params=None):
-        pg_query = query.replace("?", "%s")
-        try:
-            if params is None:
-                return self._cursor.execute(pg_query)
-            return self._cursor.execute(pg_query, params)
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            _get_pg_connection.clear()
-            _new_conn = _get_pg_connection()
-            global conn, cursor
-            conn = _new_conn
-            self._cursor = _new_conn.cursor()
-            if params is None:
-                return self._cursor.execute(pg_query)
-            return self._cursor.execute(pg_query, params)
-
-    def __getattr__(self, name):
-        return getattr(self._cursor, name)
-
-_DB_URL = st.secrets["DB_URL"]
-
-@st.cache_resource
-def _get_pg_connection():
-    _c = psycopg2.connect(_DB_URL)
-    _c.autocommit = True
-    return _c
-
-_pg_conn = _get_pg_connection()
-conn = _pg_conn
-cursor = _SqliteCompatCursor(_pg_conn.cursor())
+conn = sqlite3.connect("nep_master_perma_db.db", check_same_thread=False)
+cursor = conn.cursor()
 
 # 1. अस्थायी स्टेजिंग स्टोरेज (Panel 1 से Upload होकर यहाँ आएगा)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS raw_store (
-        id SERIAL PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         data_json TEXT
     )
 """)
@@ -933,7 +896,7 @@ cursor.execute("""
 # 2. परमानेंट स्टोरेज (Panel 2 से Approve होकर UG/PG यहाँ आएगा)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS perma_store (
-        id SERIAL PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         data_json TEXT,
         course_type TEXT
     )
@@ -943,7 +906,7 @@ cursor.execute("""
 try:
     # चेक करना कि क्या टेबल सही है
     cursor.execute("SELECT panel_prefix FROM locked_rules LIMIT 1")
-except Exception:
+except sqlite3.OperationalError:
     # अगर कोई भी गड़बड़ (जैसे कॉलम गायब होना) मिले, तो पुरानी टेबल हटा दें
     cursor.execute("DROP TABLE IF EXISTS locked_rules")
     conn.commit()
@@ -951,7 +914,7 @@ except Exception:
 # अब बिल्कुल सही और नए स्ट्रक्चर के साथ टेबल बनाएं
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS locked_rules (
-        id SERIAL PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         panel_prefix TEXT UNIQUE,
         rules_json TEXT
     )
@@ -981,7 +944,7 @@ _default_panel_passwords = {
     "p6": "psv123",   # पहले Admin का पासवर्ड
 }
 for _pk, _pw in _default_panel_passwords.items():
-    cursor.execute("INSERT INTO panel_auth (panel_key, password, hidden) VALUES (?, ?, 0) ON CONFLICT (panel_key) DO NOTHING", (_pk, _pw))
+    cursor.execute("INSERT OR IGNORE INTO panel_auth (panel_key, password, hidden) VALUES (?, ?, 0)", (_pk, _pw))
 conn.commit()
 
 # पैनल-की और उसके डिस्प्ले नाम की मैपिंग
@@ -1016,7 +979,7 @@ def set_panel_hidden(panel_key, hidden_flag):
 # 5b. ✅ सब्जेक्ट अप्रूवल स्टोरेज (Panel 3/4 में "गलत विषय" को मैन्युअली Approve करने के लिए)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS subject_approvals (
-        id SERIAL PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_key TEXT,
         panel_prefix TEXT,
         approved_by TEXT,
