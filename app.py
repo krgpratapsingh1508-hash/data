@@ -886,22 +886,39 @@ import psycopg2
 
 class _SqliteCompatCursor:
     """पुराने '?' placeholder वाले SQL को अपने-आप Postgres के '%s' में बदल देता है,
-    ताकि नीचे का बाकी सारा कोड (cursor.execute(...)) बिना बदले वैसा ही चलता रहे।"""
+    ताकि नीचे का बाकी सारा कोड (cursor.execute(...)) बिना बदले वैसा ही चलता रहे।
+    साथ ही, अगर connection कभी टूट जाए, तो अपने-आप दोबारा जोड़ता है।"""
     def __init__(self, real_cursor):
         self._cursor = real_cursor
 
     def execute(self, query, params=None):
         pg_query = query.replace("?", "%s")
-        if params is None:
-            return self._cursor.execute(pg_query)
-        return self._cursor.execute(pg_query, params)
+        try:
+            if params is None:
+                return self._cursor.execute(pg_query)
+            return self._cursor.execute(pg_query, params)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            _get_pg_connection.clear()
+            _new_conn = _get_pg_connection()
+            global conn, cursor
+            conn = _new_conn
+            self._cursor = _new_conn.cursor()
+            if params is None:
+                return self._cursor.execute(pg_query)
+            return self._cursor.execute(pg_query, params)
 
     def __getattr__(self, name):
         return getattr(self._cursor, name)
 
 _DB_URL = st.secrets["DB_URL"]
-_pg_conn = psycopg2.connect(_DB_URL)
-_pg_conn.autocommit = True
+
+@st.cache_resource
+def _get_pg_connection():
+    _c = psycopg2.connect(_DB_URL)
+    _c.autocommit = True
+    return _c
+
+_pg_conn = _get_pg_connection()
 conn = _pg_conn
 cursor = _SqliteCompatCursor(_pg_conn.cursor())
 
