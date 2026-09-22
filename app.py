@@ -1431,6 +1431,93 @@ def generate_colored_excel_bytes(df_filtered, deg_col, br_col, minor_col_found, 
 
     return output.getvalue()
 
+def generate_master_excel_bytes(sheets_data):
+    """
+    🆕 P5 Dashboard के 'मास्टर एक्सेल डाउनलोड' बटन के लिए रीयूज़ेबल फ़ंक्शन।
+    एक ही Excel फ़ाइल में कई (UG/PG) कलर-कोडेड शीट्स एक साथ बनाता है, ताकि P5 पर बनी
+    हर लिस्ट (चाहे कोई भी डिग्री/टैब हो) एक ही मास्टर फ़ाइल में मिल जाए।
+    sheets_data: dict की list, हर dict में ये keys हो सकती हैं:
+      df, sheet_name, deg_col, br_col, minor_col, mdc_col, voc_col, pw_col,
+      master_rules, approved_keys, key_col, prefix
+    """
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for sheet in sheets_data:
+            df_filtered = sheet.get("df")
+            sheet_name = sheet.get("sheet_name", "Sheet1")
+            if df_filtered is None or df_filtered.empty:
+                continue
+
+            deg_col = sheet.get("deg_col")
+            br_col = sheet.get("br_col")
+            minor_col_found = sheet.get("minor_col")
+            mdc_col_found = sheet.get("mdc_col")
+            voc_col_found = sheet.get("voc_col")
+            pw_col_found = sheet.get("pw_col")
+            master_rules = sheet.get("master_rules")
+            approved_keys = sheet.get("approved_keys") or set()
+            key_col = sheet.get("key_col")
+            prefix = sheet.get("prefix")
+
+            df_filtered.to_excel(writer, index=False, sheet_name=sheet_name)
+            worksheet = writer.sheets[sheet_name]
+
+            blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid")
+            red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")
+            green_fill = PatternFill(start_color="D4EDDA", end_color="D4EDDA", fill_type="solid")
+            thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
+                                 top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
+
+            targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
+            _exempt_list = blank_exempt_mask(df_filtered, prefix).tolist()
+
+            for idx, (_, row) in enumerate(df_filtered.iterrows()):
+                row_num = idx + 2
+
+                deg_part = str(row[deg_col]) if deg_col and deg_col in df_filtered.columns else ""
+                br_part = str(row[br_col]) if br_col and br_col in df_filtered.columns else ""
+                student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
+
+                is_row_approved = get_student_key(row, idx, key_col) in approved_keys
+
+                matched_key = "Default"
+                if master_rules:
+                    sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
+                    for rule_key in sorted_keys:
+                        rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
+                        if rule_words and all(w in student_deg for w in rule_words):
+                            matched_key = rule_key
+                            break
+                c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
+
+                for col_idx, col_name in enumerate(df_filtered.columns, start=1):
+                    cell = worksheet.cell(row=row_num, column=col_idx)
+                    val = row[col_name]
+
+                    if col_name == br_col:
+                        if pd.isna(val) or str(val).strip() == "":
+                            cell.fill = blue_fill
+                            cell.border = thin_border
+                        continue
+
+                    if col_name in targets_xl:
+                        rule_key = targets_xl[col_name]
+
+                        if pd.isna(val) or str(val).strip() == "":
+                            if not _exempt_list[idx]:
+                                cell.fill = blue_fill
+                                cell.border = thin_border
+                        else:
+                            val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
+                            valid_list = c_rule.get(rule_key, [])
+                            valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
+
+                            if valid_set and (val_clean not in valid_set):
+                                cell.fill = green_fill if is_row_approved else red_fill
+                                cell.border = thin_border
+
+    return output.getvalue()
+
 def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=None):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
     br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
@@ -3252,7 +3339,49 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                                 key_suffix=f"dash_{deg_info['display']}".replace(" ", "_").replace(".", ""),
                                 orientation="landscape" if "Landscape" in _dash_orientation else "portrait"
                             )
-                                    
+
+        # =====================================================================
+        # 📥 मास्टर एक्सेल डाउनलोड (P5 के सबसे नीचे) — ऊपर जितनी भी लिस्ट/डिग्री
+        # बनी हैं (UG + PG दोनों), वो सब एक ही रंगीन Excel फ़ाइल में आ जाएँगी।
+        # =====================================================================
+        st.divider()
+        st.markdown("### 📥 मास्टर एक्सेल डाउनलोड करें")
+        st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच) | 🟢 हरा सेल = Approved (मान्य किया गया)। इसमें ऊपर दिखाई गई UG और PG — दोनों की पूरी लिस्ट एक ही फ़ाइल में (अलग-अलग शीट में) मिलेगी।")
+
+        _p5_ug_key_col = find_student_key_col(df_ug_all) if (df_ug_all is not None and not df_ug_all.empty) else None
+        _p5_pg_key_col = find_student_key_col(df_pg_all) if (df_pg_all is not None and not df_pg_all.empty) else None
+        _p5_ug_approved_keys = {a[0] for a in get_all_approvals("ug")}
+        _p5_pg_approved_keys = {a[0] for a in get_all_approvals("pg")}
+
+        _p5_master_sheets = []
+        if df_ug_all is not None and not df_ug_all.empty:
+            _p5_master_sheets.append({
+                "df": df_ug_all, "sheet_name": "UG_Master_List",
+                "deg_col": deg_col, "br_col": br_col, "minor_col": minor_col, "mdc_col": mdc_col,
+                "voc_col": voc_col, "pw_col": pw_col, "master_rules": ug_master_rules,
+                "approved_keys": _p5_ug_approved_keys, "key_col": _p5_ug_key_col, "prefix": "ug"
+            })
+        if df_pg_all is not None and not df_pg_all.empty:
+            _p5_master_sheets.append({
+                "df": df_pg_all, "sheet_name": "PG_Master_List",
+                "deg_col": deg_col, "br_col": br_col, "minor_col": minor_col, "mdc_col": mdc_col,
+                "voc_col": voc_col, "pw_col": pw_col, "master_rules": None,
+                "approved_keys": _p5_pg_approved_keys, "key_col": _p5_pg_key_col, "prefix": "pg"
+            })
+
+        if _p5_master_sheets:
+            _p5_master_excel_bytes = generate_master_excel_bytes(_p5_master_sheets)
+            st.download_button(
+                label="📥 मास्टर एक्सेल डाउनलोड करें (UG + PG पूरी लिस्ट)",
+                data=_p5_master_excel_bytes,
+                file_name="P5_Master_Dashboard_Data.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="p5_master_excel_download_btn",
+                use_container_width=True
+            )
+        else:
+            st.info("मास्टर एक्सेल के लिए फिलहाल कोई डेटा उपलब्ध नहीं है।")
+
 # =========================================================================
 # ⚙️ PANEL 6: ADMIN PANEL
 # =========================================================================
