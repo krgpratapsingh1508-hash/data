@@ -1518,6 +1518,320 @@ def generate_master_excel_bytes(sheets_data):
 
     return output.getvalue()
 
+def generate_p5_master_full_excel(raw_sheets, cat_labels, ug_blocks, pg_blocks,
+                                   ug_summary, pg_summary,
+                                   ug_students, ug_flags, ug_approved,
+                                   pg_students, pg_flags, pg_approved):
+    """
+    🆕 P5 Dashboard के 'मास्टर एक्सेल डाउनलोड' बटन के लिए पूरी 6-शीट Excel फ़ाइल बनाता है:
+      Sheet 1: UG_Master_List        — पूरा UG रॉ डेटा (रंगीन)
+      Sheet 2: PG_Master_List        — पूरा PG रॉ डेटा (रंगीन)
+      Sheet 3: Branch_Subject_Sheet  — ब्रांच-वाइज विषय शीट (Total Admission + Minor/MDC/Voc/PW नाम व संख्या, merged cells)
+      Sheet 4: Degree_Branch_Summary — डिग्री+ब्रांच-वाइज समरी (Minor+MDC+Voc+PW सभी एक साथ, UG फिर PG)
+      Sheet 5: Reason_Students       — जिन छात्रों का कोई विषय गलत/खाली है, उनकी पूरी लिस्ट + कारण
+      Sheet 6: Approved_Students     — शीट 5 में से जो पहले ही Approve किए जा चुके हैं, उनकी लिस्ट
+    raw_sheets: sheet 1/2 के लिए dict की list (generate_master_excel_bytes जैसा फ़ॉर्मेट)।
+    """
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+
+        # ================== Sheet 1 & 2: रॉ डेटा (रंगीन) ==================
+        for sheet in raw_sheets:
+            df_filtered = sheet.get("df")
+            sheet_name = sheet.get("sheet_name", "Sheet1")
+            if df_filtered is None or df_filtered.empty:
+                continue
+
+            s_deg_col = sheet.get("deg_col")
+            s_br_col = sheet.get("br_col")
+            minor_col_found = sheet.get("minor_col")
+            mdc_col_found = sheet.get("mdc_col")
+            voc_col_found = sheet.get("voc_col")
+            pw_col_found = sheet.get("pw_col")
+            master_rules = sheet.get("master_rules")
+            approved_keys = sheet.get("approved_keys") or set()
+            key_col = sheet.get("key_col")
+            prefix = sheet.get("prefix")
+
+            df_filtered.to_excel(writer, index=False, sheet_name=sheet_name)
+            worksheet = writer.sheets[sheet_name]
+
+            blue_fill = PatternFill(start_color="D1ECF1", end_color="D1ECF1", fill_type="solid")
+            red_fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")
+            green_fill = PatternFill(start_color="D4EDDA", end_color="D4EDDA", fill_type="solid")
+            thin_border = Border(left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
+                                 top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'))
+
+            targets_xl = {minor_col_found: 'minor', mdc_col_found: 'mdc', voc_col_found: 'voc', pw_col_found: 'pw'}
+            _exempt_list = blank_exempt_mask(df_filtered, prefix).tolist()
+
+            for idx, (_, row) in enumerate(df_filtered.iterrows()):
+                row_num = idx + 2
+
+                deg_part = str(row[s_deg_col]) if s_deg_col and s_deg_col in df_filtered.columns else ""
+                br_part = str(row[s_br_col]) if s_br_col and s_br_col in df_filtered.columns else ""
+                student_deg = (deg_part + " " + br_part).lower().replace(".", "").replace(" ", "").strip()
+
+                is_row_approved = get_student_key(row, idx, key_col) in approved_keys
+
+                matched_key = "Default"
+                if master_rules:
+                    sorted_keys = sorted(master_rules.keys(), key=len, reverse=True)
+                    for rule_key in sorted_keys:
+                        rule_words = [w.lower().replace(".", "").strip() for w in rule_key.split() if w.strip()]
+                        if rule_words and all(w in student_deg for w in rule_words):
+                            matched_key = rule_key
+                            break
+                c_rule = master_rules.get(matched_key, {"minor": [], "mdc": [], "voc": [], "pw": []}) if master_rules else {"minor": [], "mdc": [], "voc": [], "pw": []}
+
+                for col_idx, col_name in enumerate(df_filtered.columns, start=1):
+                    cell = worksheet.cell(row=row_num, column=col_idx)
+                    val = row[col_name]
+
+                    if col_name == s_br_col:
+                        if pd.isna(val) or str(val).strip() == "":
+                            cell.fill = blue_fill
+                            cell.border = thin_border
+                        continue
+
+                    if col_name in targets_xl:
+                        rule_key = targets_xl[col_name]
+
+                        if pd.isna(val) or str(val).strip() == "":
+                            if not _exempt_list[idx]:
+                                cell.fill = blue_fill
+                                cell.border = thin_border
+                        else:
+                            val_clean = str(val).strip().lower().replace(".", "").replace(" ", "")
+                            valid_list = c_rule.get(rule_key, [])
+                            valid_set = {str(x).strip().lower().replace(".", "").replace(" ", "") for x in valid_list}
+
+                            if valid_set and (val_clean not in valid_set):
+                                cell.fill = green_fill if is_row_approved else red_fill
+                                cell.border = thin_border
+
+        # ================== कॉमन स्टाइल ==================
+        thin = Side(style="thin", color="BFBFBF")
+        border3 = Border(left=thin, right=thin, top=thin, bottom=thin)
+        head_fill3 = PatternFill("solid", start_color="1A3C6E", end_color="1A3C6E")
+        band_a3 = PatternFill("solid", start_color="EAF1FB", end_color="EAF1FB")
+        band_b3 = PatternFill("solid", start_color="FFFFFF", end_color="FFFFFF")
+        red_fill3 = PatternFill("solid", start_color="F8D7DA", end_color="F8D7DA")
+        blue_fill3 = PatternFill("solid", start_color="D1ECF1", end_color="D1ECF1")
+        zebra_fill3 = PatternFill("solid", start_color="F4F7FD", end_color="F4F7FD")
+        green_head_fill3 = PatternFill("solid", start_color="0F9D58", end_color="0F9D58")
+        green_fill3 = PatternFill("solid", start_color="D4EDDA", end_color="D4EDDA")
+
+        # ================== Sheet 3: ब्रांच-वाइज विषय शीट (UG + PG मर्ज) ==================
+        ws3 = writer.book.create_sheet("Branch_Subject_Sheet")
+        headers3 = ["Type", "Degree (डिग्री)", "Branch (ब्रांच)", "Total Admission"]
+        for l_ in cat_labels:
+            headers3 += [f"{l_} (विषय)", f"{l_} Count"]
+        for c_i, t_ in enumerate(headers3, start=1):
+            cell = ws3.cell(row=1, column=c_i, value=t_)
+            cell.fill = head_fill3
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border3
+
+        r3 = 2
+        all_blocks3 = [("UG", b_) for b_ in ug_blocks] + [("PG", b_) for b_ in pg_blocks]
+        for bi, (typ_, b_) in enumerate(all_blocks3):
+            start, end = r3, r3 + b_["n"] - 1
+            fill = band_a3 if bi % 2 == 0 else band_b3
+            for rr in range(start, end + 1):
+                for cc in range(1, len(headers3) + 1):
+                    cell = ws3.cell(row=rr, column=cc)
+                    cell.fill = fill
+                    cell.border = border3
+            for cc, val in ((1, typ_), (2, b_["degree"]), (3, b_["branch"]), (4, b_["total"])):
+                cell = ws3.cell(row=start, column=cc, value=val)
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                if end > start:
+                    ws3.merge_cells(start_row=start, start_column=cc, end_row=end, end_column=cc)
+            for k, items in enumerate(b_["cats"]):
+                for i, (name_, cnt_) in enumerate(items):
+                    ws3.cell(row=start + i, column=5 + 2 * k, value=name_).alignment = Alignment(vertical="center", wrap_text=True)
+                    ws3.cell(row=start + i, column=6 + 2 * k, value=cnt_).alignment = Alignment(horizontal="center", vertical="center")
+            r3 = end + 1
+
+        widths3 = [10, 22, 28, 16] + [34, 12] * len(cat_labels)
+        for c_i, w_ in enumerate(widths3, start=1):
+            ws3.column_dimensions[get_column_letter(c_i)].width = w_
+        ws3.freeze_panes = "A2"
+        if r3 == 2:
+            ws3.cell(row=2, column=1, value="कोई डेटा उपलब्ध नहीं है।")
+
+        # ================== Sheet 4: डिग्री + ब्रांच-वाइज समरी (UG फिर PG) ==================
+        def _write_summary_section(ws, start_row, type_label, summary_df):
+            if summary_df is None or summary_df.empty:
+                return start_row
+            cols4 = list(summary_df.columns)
+            red_idx4 = [i for i, c in enumerate(cols4) if "🔴" in str(c)]
+            blue_idx4 = [i for i, c in enumerate(cols4) if "🔵" in str(c)]
+            reason_idx4 = next((i for i, c in enumerate(cols4) if "Reason" in str(c)), None)
+
+            headers4 = ["Type"] + cols4
+            for c_i, t_ in enumerate(headers4, start=1):
+                cell = ws.cell(row=start_row, column=c_i, value=t_)
+                cell.fill = head_fill3
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = border3
+
+            r_ = start_row + 1
+            for _, row in summary_df.iterrows():
+                is_total = str(row.iloc[0]).startswith("कुल योग")
+                cell0 = ws.cell(row=r_, column=1, value=type_label)
+                cell0.border = border3
+                if is_total:
+                    cell0.fill = head_fill3
+                    cell0.font = Font(bold=True, color="FFFFFF")
+                any_w = (not is_total) and any((row.iloc[i] or 0) > 0 for i in red_idx4)
+                any_b = (not is_total) and any((row.iloc[i] or 0) > 0 for i in blue_idx4)
+                for c_i0, cname in enumerate(cols4):
+                    val = row.iloc[c_i0]
+                    if c_i0 == reason_idx4 and isinstance(val, str):
+                        val = val.replace("  ||  ", "\n")
+                    cell = ws.cell(row=r_, column=c_i0 + 2, value=val)
+                    cell.border = border3
+                    cell.alignment = Alignment(vertical="top", wrap_text=(c_i0 == reason_idx4))
+                    if is_total:
+                        cell.fill = head_fill3
+                        cell.font = Font(bold=True, color="FFFFFF")
+                    elif c_i0 in red_idx4 and isinstance(val, (int, float)) and val > 0:
+                        cell.fill = red_fill3
+                        cell.font = Font(bold=True, color="721C24")
+                    elif c_i0 in blue_idx4 and isinstance(val, (int, float)) and val > 0:
+                        cell.fill = blue_fill3
+                        cell.font = Font(bold=True, color="0C5460")
+                    elif c_i0 == reason_idx4 and str(val).strip():
+                        if any_w:
+                            cell.fill = red_fill3
+                            cell.font = Font(bold=True, color="721C24")
+                        elif any_b:
+                            cell.fill = blue_fill3
+                            cell.font = Font(bold=True, color="0C5460")
+                r_ += 1
+            return r_ + 1   # अगली टेबल से पहले एक खाली रो
+
+        ws4 = writer.book.create_sheet("Degree_Branch_Summary")
+        _r4 = _write_summary_section(ws4, 1, "UG", ug_summary)
+        _r4 = _write_summary_section(ws4, _r4, "PG", pg_summary)
+        if _r4 == 1:
+            ws4.cell(row=1, column=1, value="कोई डेटा उपलब्ध नहीं है।")
+        ws4.column_dimensions['A'].width = 8
+        ws4.column_dimensions['B'].width = 22
+        ws4.column_dimensions['C'].width = 26
+        for _cl in ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']:
+            ws4.column_dimensions[_cl].width = 16
+        ws4.freeze_panes = "C2"
+
+        # ================== Sheet 5: Reason वाले छात्रों की पूरी लिस्ट ==================
+        def _write_students_section(ws, start_row, type_label, students_df, flags):
+            if students_df is None or students_df.empty:
+                return start_row
+            cols5 = list(students_df.columns)
+            reason_idx5 = next((i for i, c in enumerate(cols5) if "Reason" in str(c)), None)
+            headers5 = ["Type"] + cols5
+            for c_i, t_ in enumerate(headers5, start=1):
+                cell = ws.cell(row=start_row, column=c_i, value=t_)
+                cell.fill = head_fill3
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = border3
+
+            r_ = start_row + 1
+            flags = flags or {}
+            for r_i in range(len(students_df)):
+                row = students_df.iloc[r_i]
+                c0 = ws.cell(row=r_, column=1, value=type_label)
+                c0.border = border3
+                row_has_w = row_has_b = False
+                for c_i0, cname in enumerate(cols5):
+                    val = row.iloc[c_i0]
+                    if c_i0 == reason_idx5 and isinstance(val, str):
+                        val = val.replace("\n", "\n")
+                    cell = ws.cell(row=r_, column=c_i0 + 2, value=val)
+                    cell.border = border3
+                    cell.alignment = Alignment(vertical="top", wrap_text=(c_i0 == reason_idx5))
+                    f_list = flags.get(cname)
+                    f = f_list[r_i] if f_list is not None else ""
+                    if f == "w":
+                        cell.fill = red_fill3
+                        cell.font = Font(bold=True, color="721C24")
+                        row_has_w = True
+                    elif f == "b":
+                        cell.fill = blue_fill3
+                        cell.font = Font(bold=True, color="0C5460")
+                        row_has_b = True
+                    elif r_i % 2 == 1:
+                        cell.fill = zebra_fill3
+                if reason_idx5 is not None:
+                    rc = ws.cell(row=r_, column=reason_idx5 + 2)
+                    if row_has_w:
+                        rc.fill = red_fill3
+                        rc.font = Font(bold=True, color="721C24")
+                    elif row_has_b:
+                        rc.fill = blue_fill3
+                        rc.font = Font(bold=True, color="0C5460")
+                r_ += 1
+            return r_ + 1
+
+        ws5 = writer.book.create_sheet("Reason_Students")
+        _r5 = _write_students_section(ws5, 1, "UG", ug_students, ug_flags)
+        _r5 = _write_students_section(ws5, _r5, "PG", pg_students, pg_flags)
+        if _r5 == 1:
+            ws5.cell(row=1, column=1, value="कोई भी गलत (🔴) या खाली (🔵) एंट्री वाला छात्र नहीं मिला।")
+            ws5.column_dimensions['A'].width = 70
+        else:
+            ws5.column_dimensions['A'].width = 8
+            ws5.freeze_panes = "B2"
+
+        # ================== Sheet 6: Approve किए गए छात्रों की लिस्ट (Sheet 5 में से) ==================
+        def _write_approved_section(ws, start_row, type_label, approved_df):
+            if approved_df is None or approved_df.empty:
+                return start_row
+            cols6 = list(approved_df.columns)
+            headers6 = ["Type"] + cols6
+            for c_i, t_ in enumerate(headers6, start=1):
+                cell = ws.cell(row=start_row, column=c_i, value=t_)
+                cell.fill = green_head_fill3
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = border3
+
+            r_ = start_row + 1
+            reason_idx6 = next((i for i, c in enumerate(cols6) if "Reason" in str(c) or "कारण" in str(c)), None)
+            for _, row in approved_df.iterrows():
+                c0 = ws.cell(row=r_, column=1, value=type_label)
+                c0.border = border3
+                c0.fill = green_fill3
+                for c_i0, cname in enumerate(cols6):
+                    cell = ws.cell(row=r_, column=c_i0 + 2, value=row.iloc[c_i0])
+                    cell.border = border3
+                    cell.fill = green_fill3
+                    cell.font = Font(color="155724")
+                    cell.alignment = Alignment(vertical="top", wrap_text=(c_i0 == reason_idx6))
+                r_ += 1
+            return r_ + 1
+
+        ws6 = writer.book.create_sheet("Approved_Students")
+        _r6 = _write_approved_section(ws6, 1, "UG", ug_approved)
+        _r6 = _write_approved_section(ws6, _r6, "PG", pg_approved)
+        if _r6 == 1:
+            ws6.cell(row=1, column=1, value="अभी तक इनमें से किसी भी 'गलत/खाली' छात्र को Approve नहीं किया गया है।")
+            ws6.column_dimensions['A'].width = 70
+        else:
+            ws6.column_dimensions['A'].width = 8
+            ws6.freeze_panes = "B2"
+
+    return output.getvalue()
+
 def process_panel_validation(df_panel, prefix, allowed_degrees, master_rules=None):
     deg_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), df_panel.columns[0])
     br_col = next((c for c in df_panel.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), df_panel.columns[0])
@@ -3342,11 +3656,17 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
 
         # =====================================================================
         # 📥 मास्टर एक्सेल डाउनलोड (P5 के सबसे नीचे) — ऊपर जितनी भी लिस्ट/डिग्री
-        # बनी हैं (UG + PG दोनों), वो सब एक ही रंगीन Excel फ़ाइल में आ जाएँगी।
+        # बनी हैं (UG + PG दोनों), वो सब एक ही Excel फ़ाइल में 6 शीट के रूप में आ जाएँगी।
         # =====================================================================
         st.divider()
-        st.markdown("### 📥 मास्टर एक्सेल डाउनलोड करें")
-        st.caption("🔵 नीला सेल = डेटा गायब है | 🔴 लाल सेल = गलत विषय (मास्टर गाइडलाइन से मिसमैच) | 🟢 हरा सेल = Approved (मान्य किया गया)। इसमें ऊपर दिखाई गई UG और PG — दोनों की पूरी लिस्ट एक ही फ़ाइल में (अलग-अलग शीट में) मिलेगी।")
+        st.markdown("### 📥 मास्टर एक्सेल डाउनलोड करें (6 शीट)")
+        st.caption(
+            "Sheet 1-2: UG/PG का पूरा रॉ डेटा (🔵 खाली | 🔴 गलत | 🟢 Approved)  |  "
+            "Sheet 3: ब्रांच-वाइज विषय शीट (Total Admission + Minor/MDC/Voc/PW के नाम व संख्या)  |  "
+            "Sheet 4: डिग्री+ब्रांच-वाइज समरी (Minor+MDC+Voc+PW सभी एक साथ)  |  "
+            "Sheet 5: जिन छात्रों का कोई विषय गलत/खाली है, उनकी पूरी लिस्ट + कारण  |  "
+            "Sheet 6: Sheet 5 में से जो पहले ही Approve हो चुके हैं, उनकी लिस्ट।"
+        )
 
         _p5_ug_key_col = find_student_key_col(df_ug_all) if (df_ug_all is not None and not df_ug_all.empty) else None
         _p5_pg_key_col = find_student_key_col(df_pg_all) if (df_pg_all is not None and not df_pg_all.empty) else None
@@ -3369,10 +3689,177 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                 "approved_keys": _p5_pg_approved_keys, "key_col": _p5_pg_key_col, "prefix": "pg"
             })
 
-        if _p5_master_sheets:
-            _p5_master_excel_bytes = generate_master_excel_bytes(_p5_master_sheets)
+        # ---------------------------------------------------------------------
+        # 🧮 UG और PG — दोनों के लिए ब्रांच-वाइज विषय ब्लॉक्स, डिग्री+ब्रांच समरी,
+        # Reason वाले छात्रों की लिस्ट और उनमें से Approve हो चुके छात्रों की लिस्ट निकालना
+        # (यह वही logic है जो ऊपर 'भाग 1' में UG/PG टैब पर दिखता है, बस यहाँ पूरे स्कोप के लिए)
+        # ---------------------------------------------------------------------
+        def _p5_build_scope_summary(df_scope, scope_rules, prefix):
+            if df_scope is None or df_scope.empty:
+                return [], pd.DataFrame(), pd.DataFrame(), {}, pd.DataFrame()
+
+            _sdb = df_scope.copy()
+            _skip_kw2 = ['minor', 'mdc', 'voc', 'skill', 'pw', 'project']
+            _sdc = deg_col if (deg_col and deg_col in _sdb.columns) else next(
+                (c for c in _sdb.columns if any(k in str(c).lower() for k in ['deg', 'course', 'class'])), None)
+            _sbc = br_col if (br_col and br_col in _sdb.columns and br_col != _sdc) else None
+            if _sbc is None:
+                _sbc = next((c for c in _sdb.columns if c != _sdc and any(k in str(c).lower() for k in ['branch', 'stream'])), None)
+            if _sbc is None:
+                _sbc = next((c for c in _sdb.columns if c != _sdc and 'subject' in str(c).lower()
+                            and not any(k in str(c).lower() for k in _skip_kw2)), None)
+
+            def _sclean_key(series):
+                s_ = series.astype(str).str.strip()
+                return s_.mask(series.isna() | (s_ == "") | (s_.str.lower() == "nan"), "(खाली/Blank)")
+
+            _sdb["Degree (डिग्री)"] = _sclean_key(_sdb[_sdc]) if _sdc else "—"
+            _sdb["Branch (ब्रांच)"] = _sclean_key(_sdb[_sbc]) if _sbc else "—"
+
+            _all_cats2 = [("Minor", "minor", minor_col), ("MDC", "mdc", mdc_col), ("Voc", "voc", voc_col), ("PW", "pw", pw_col)]
+            _present_cats2 = [(l_, k_, c_) for (l_, k_, c_) in _all_cats2 if c_ and c_ in _sdb.columns]
+
+            _blocks2 = build_branch_subject_blocks(_sdb, "Degree (डिग्री)", "Branch (ब्रांच)", [(l_, c_) for l_, k_, c_ in _present_cats2])
+
+            if not _present_cats2:
+                _summary2 = _sdb.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]).size().reset_index(name="कुल छात्र (Total)")
+                _summary2 = _summary2.sort_values(["Degree (डिग्री)", "कुल छात्र (Total)"], ascending=[True, False]).reset_index(drop=True)
+                _summary2 = pd.concat([_summary2, pd.DataFrame([{
+                    "Degree (डिग्री)": "कुल योग (GRAND TOTAL)", "Branch (ब्रांच)": "",
+                    "कुल छात्र (Total)": int(_summary2["कुल छात्र (Total)"].sum())}])], ignore_index=True)
+                return _blocks2, _summary2, pd.DataFrame(), {}, pd.DataFrame()
+
+            if scope_rules is not None and len(_sdb):
+                _sdb["_rd"] = _sdb.apply(_row_degree_name, axis=1)
+            else:
+                _sdb["_rd"] = None
+
+            _ex_pairs2 = get_blank_exempt_pairs(prefix)
+            _ex_s2 = pd.Series([(d_, b_) in _ex_pairs2 for d_, b_ in zip(_sdb["Degree (डिग्री)"], _sdb["Branch (ब्रांच)"])], index=_sdb.index)
+
+            for _lbl, _rk, _cn in _present_cats2:
+                _empty_s2 = _sdb[_cn].isna() | (_sdb[_cn].astype(str).str.strip() == "")
+                _blank_s2 = _empty_s2 & ~_ex_s2
+                _norm_s2 = _sdb[_cn].astype(str).map(_norm_txt)
+                _wrong_s2 = pd.Series(False, index=_sdb.index)
+                if scope_rules is not None:
+                    for _rd_name in _sdb["_rd"].dropna().unique():
+                        _allowed2 = {_norm_txt(x) for x in ((scope_rules.get(_rd_name) or {}).get(_rk, []))}
+                        if _allowed2:
+                            _wrong_s2 = _wrong_s2 | ((_sdb["_rd"] == _rd_name) & ~_empty_s2 & ~_norm_s2.isin(_allowed2))
+                _sdb[f"_w_{_rk}"] = _wrong_s2
+                _sdb[f"_b_{_rk}"] = _blank_s2
+
+            _first_rk2 = _present_cats2[0][1]
+            _agg2 = {"_total": (f"_w_{_first_rk2}", "size")}
+            for _lbl, _rk, _cn in _present_cats2:
+                _agg2[f"_w_{_rk}"] = (f"_w_{_rk}", "sum")
+                _agg2[f"_b_{_rk}"] = (f"_b_{_rk}", "sum")
+            _grp2 = _sdb.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]).agg(**_agg2).reset_index()
+
+            def _reason_for_group2(g):
+                lines = []
+                for _lbl, _rk, _cn in _present_cats2:
+                    parts = []
+                    w = g[g[f"_w_{_rk}"]]
+                    if len(w):
+                        for _rd_name, _wg in w.groupby("_rd"):
+                            _vc = _wg[_cn].astype(str).str.strip().value_counts()
+                            _subj = ", ".join(f"{k} ({v})" for k, v in _vc.items())
+                            parts.append(f"🔴 {len(_wg)} छात्रों का विषय {_rd_name or 'इस डिग्री'} के मास्टर नियम में मान्य नहीं है → {_subj}")
+                    _bn = int(g[f"_b_{_rk}"].sum())
+                    if _bn:
+                        parts.append(f"🔵 {_bn} छात्रों का खाली है (डेटा नहीं भरा गया)")
+                    if parts:
+                        lines.append(f"{_lbl}: " + " ; ".join(parts))
+                return "  ||  ".join(lines)
+
+            _reasons2 = {}
+            for (_d_k, _b_k), _g in _sdb.groupby(["Degree (डिग्री)", "Branch (ब्रांच)"]):
+                _reasons2[(_d_k, _b_k)] = _reason_for_group2(_g)
+
+            _summary2 = _grp2[["Degree (डिग्री)", "Branch (ब्रांच)"]].copy()
+            _summary2["कुल छात्र (Total)"] = _grp2["_total"].astype(int)
+            for _lbl, _rk, _cn in _present_cats2:
+                _w_col2 = _grp2[f"_w_{_rk}"].astype(int)
+                _b_col2 = _grp2[f"_b_{_rk}"].astype(int)
+                _summary2[f"{_lbl} ✅ सही"] = _summary2["कुल छात्र (Total)"] - _w_col2 - _b_col2
+                _summary2[f"{_lbl} 🔴 गलत"] = _w_col2
+                _summary2[f"{_lbl} 🔵 खाली"] = _b_col2
+            _summary2["📝 कारण (Reason)"] = [
+                _reasons2.get((_d_k, _b_k), "")
+                for _d_k, _b_k in zip(_grp2["Degree (डिग्री)"], _grp2["Branch (ब्रांच)"])
+            ]
+            _summary2 = _summary2.sort_values(["Degree (डिग्री)", "कुल छात्र (Total)"], ascending=[True, False]).reset_index(drop=True)
+            _tot2 = {c_: "" for c_ in _summary2.columns}
+            _tot2["Degree (डिग्री)"] = "कुल योग (GRAND TOTAL)"
+            _tot2["Branch (ब्रांच)"] = ""
+            for c_ in _summary2.columns:
+                if c_ not in ("Degree (डिग्री)", "Branch (ब्रांच)", "📝 कारण (Reason)"):
+                    _tot2[c_] = int(_summary2[c_].sum())
+            _summary2 = pd.concat([_summary2, pd.DataFrame([_tot2])], ignore_index=True)
+
+            _any_flag2 = pd.Series(False, index=_sdb.index)
+            for _lbl, _rk, _cn in _present_cats2:
+                _any_flag2 = _any_flag2 | _sdb[f"_w_{_rk}"] | _sdb[f"_b_{_rk}"]
+            _stu2 = _sdb[_any_flag2].sort_values(["Degree (डिग्री)", "Branch (ब्रांच)"], kind="stable")
+            _orig_cols2 = [c for c in df_scope.columns if c in _stu2.columns]
+
+            def _stu_reason2(r):
+                out_ = []
+                for _lbl, _rk, _cn in _present_cats2:
+                    if r[f"_w_{_rk}"]:
+                        _rd_ = r["_rd"] if r["_rd"] else "इस डिग्री"
+                        out_.append(f"🔴 {_lbl}: '{str(r[_cn]).strip()}' — {_rd_} के मास्टर नियम में मान्य नहीं")
+                    elif r[f"_b_{_rk}"]:
+                        out_.append(f"🔵 {_lbl}: खाली (डेटा नहीं भरा गया)")
+                return "\n".join(out_)
+
+            _students_df2 = _stu2[_orig_cols2].copy().reset_index(drop=True)
+            _students_df2.insert(0, "क्र.सं.", range(1, len(_students_df2) + 1))
+            _reason_texts2 = [_stu_reason2(r_) for _, r_ in _stu2.iterrows()]
+            _students_df2["📝 कारण (Reason)"] = _reason_texts2
+            _student_flags2 = {}
+            for _lbl, _rk, _cn in _present_cats2:
+                _student_flags2[_cn] = [
+                    "w" if w_ else ("b" if b_ else "")
+                    for w_, b_ in zip(_stu2[f"_w_{_rk}"].tolist(), _stu2[f"_b_{_rk}"].tolist())
+                ]
+
+            # 🟢 Sheet 6 के लिए: इनमें से जो पहले ही Approve किए जा चुके हैं
+            _dash_key_col2 = find_student_key_col(_sdb)
+            _approved_hits2 = []
+            for _pos, (_idx, _row) in enumerate(_stu2.iterrows()):
+                _skey2 = get_student_key(_row, _pos, _dash_key_col2)
+                _appr2 = get_approval(_skey2, prefix)
+                if _appr2:
+                    _approved_hits2.append((_idx, _appr2[0], _appr2[1]))
+
+            if _approved_hits2:
+                _hit_idx2 = [i for i, _, _ in _approved_hits2]
+                _approved_df2 = _stu2.loc[_hit_idx2][_orig_cols2].copy().reset_index(drop=True)
+                _approved_df2.insert(0, "✅ Approve किया (By)", [a[1] for a in _approved_hits2])
+                _approved_df2.insert(1, "🕒 Approve समय", [a[2] for a in _approved_hits2])
+                _approved_df2["📝 कारण (जो गलत/खाली था)"] = [_stu_reason2(r_) for _, r_ in _stu2.loc[_hit_idx2].iterrows()]
+            else:
+                _approved_df2 = pd.DataFrame()
+
+            return _blocks2, _summary2, _students_df2, _student_flags2, _approved_df2
+
+        _p5_ug_blocks, _p5_ug_summary, _p5_ug_students, _p5_ug_flags, _p5_ug_approved = _p5_build_scope_summary(df_ug_all, ug_master_rules, "ug")
+        _p5_pg_blocks, _p5_pg_summary, _p5_pg_students, _p5_pg_flags, _p5_pg_approved = _p5_build_scope_summary(df_pg_all, None, "pg")
+        _p5_cat_labels = [l_ for l_, k_, c_ in [("Minor", "minor", minor_col), ("MDC", "mdc", mdc_col), ("Voc", "voc", voc_col), ("PW", "pw", pw_col)] if c_]
+
+        if _p5_master_sheets or _p5_ug_blocks or _p5_pg_blocks:
+            _p5_master_excel_bytes = generate_p5_master_full_excel(
+                _p5_master_sheets, _p5_cat_labels,
+                _p5_ug_blocks, _p5_pg_blocks,
+                _p5_ug_summary, _p5_pg_summary,
+                _p5_ug_students, _p5_ug_flags, _p5_ug_approved,
+                _p5_pg_students, _p5_pg_flags, _p5_pg_approved
+            )
             st.download_button(
-                label="📥 मास्टर एक्सेल डाउनलोड करें (UG + PG पूरी लिस्ट)",
+                label="📥 मास्टर एक्सेल डाउनलोड करें (6 शीट: UG+PG लिस्ट, ब्रांच-वाइज विषय, समरी, Reason, Approved)",
                 data=_p5_master_excel_bytes,
                 file_name="P5_Master_Dashboard_Data.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
