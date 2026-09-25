@@ -1521,16 +1521,19 @@ def generate_master_excel_bytes(sheets_data):
 def generate_p5_master_full_excel(raw_sheets, cat_labels, ug_blocks, pg_blocks,
                                    ug_summary, pg_summary,
                                    ug_students, ug_flags, ug_approved,
-                                   pg_students, pg_flags, pg_approved):
+                                   pg_students, pg_flags, pg_approved,
+                                   sheet1_df=None, sheet1_name="Uploaded_File"):
     """
-    🆕 P5 Dashboard के 'मास्टर एक्सेल डाउनलोड' बटन के लिए पूरी 6-शीट Excel फ़ाइल बनाता है:
-      Sheet 1: UG_Master_List        — पूरा UG रॉ डेटा (रंगीन)
-      Sheet 2: PG_Master_List        — पूरा PG रॉ डेटा (रंगीन)
-      Sheet 3: Branch_Subject_Sheet  — ब्रांच-वाइज विषय शीट (Total Admission + Minor/MDC/Voc/PW नाम व संख्या, merged cells)
-      Sheet 4: Degree_Branch_Summary — डिग्री+ब्रांच-वाइज समरी (Minor+MDC+Voc+PW सभी एक साथ, UG फिर PG)
-      Sheet 5: Reason_Students       — जिन छात्रों का कोई विषय गलत/खाली है, उनकी पूरी लिस्ट + कारण
-      Sheet 6: Approved_Students     — शीट 5 में से जो पहले ही Approve किए जा चुके हैं, उनकी लिस्ट
-    raw_sheets: sheet 1/2 के लिए dict की list (generate_master_excel_bytes जैसा फ़ॉर्मेट)।
+    🆕 P5 Dashboard के 'मास्टर एक्सेल डाउनलोड' बटन के लिए पूरी 7-शीट Excel फ़ाइल बनाता है:
+      Sheet 1: (sheet1_name)         — यूज़र द्वारा अपलोड की गई फ़ाइल, बिना किसी बदलाव के जस की तस
+      Sheet 2: UG_Master_List        — पूरा UG रॉ डेटा (रंगीन)
+      Sheet 3: PG_Master_List        — पूरा PG रॉ डेटा (रंगीन)
+      Sheet 4: Branch_Subject_Sheet  — ब्रांच-वाइज विषय शीट (Total Admission + Minor/MDC/Voc/PW नाम व संख्या, merged cells)
+      Sheet 5: Degree_Branch_Summary — डिग्री+ब्रांच-वाइज समरी (Minor+MDC+Voc+PW सभी एक साथ, UG फिर PG)
+      Sheet 6: Reason_Students       — जिन छात्रों का कोई विषय गलत/खाली है, उनकी पूरी लिस्ट + कारण
+      Sheet 7: Approved_Students     — शीट 6 में से जो पहले ही Approve किए जा चुके हैं, उनकी लिस्ट
+    raw_sheets: sheet 2/3 के लिए dict की list (generate_master_excel_bytes जैसा फ़ॉर्मेट)।
+    sheet1_df: यूज़र द्वारा P5 में अलग से अपलोड की गई फ़ाइल का DataFrame (None/खाली होने पर Sheet 1 छोड़ दी जाती है)।
     """
     from openpyxl.styles import Font, Alignment
     from openpyxl.utils import get_column_letter
@@ -1538,7 +1541,21 @@ def generate_p5_master_full_excel(raw_sheets, cat_labels, ug_blocks, pg_blocks,
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
 
-        # ================== Sheet 1 & 2: रॉ डेटा (रंगीन) ==================
+        # ================== Sheet 1: यूज़र की अपलोड की हुई फ़ाइल — जस की तस ==================
+        if sheet1_df is not None and not sheet1_df.empty:
+            _safe_sheet1 = "".join(ch for ch in str(sheet1_name) if ch not in '[]:*?/\\')[:31] or "Uploaded_File"
+            sheet1_df.to_excel(writer, index=False, sheet_name=_safe_sheet1)
+            _ws1 = writer.sheets[_safe_sheet1]
+            for _c_i, _col_name in enumerate(sheet1_df.columns, start=1):
+                _cell = _ws1.cell(row=1, column=_c_i)
+                _cell.font = Font(bold=True, color="FFFFFF")
+                _cell.fill = PatternFill("solid", start_color="1A3C6E", end_color="1A3C6E")
+                _cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                _longest = max([len(str(_col_name))] + [len(str(v)) for v in sheet1_df.iloc[:, _c_i - 1].astype(str).tolist()[:500]])
+                _ws1.column_dimensions[get_column_letter(_c_i)].width = min(max(_longest + 3, 10), 40)
+            _ws1.freeze_panes = "A2"
+
+        # ================== Sheet 2 & 3: रॉ डेटा (रंगीन) ==================
         for sheet in raw_sheets:
             df_filtered = sheet.get("df")
             sheet_name = sheet.get("sheet_name", "Sheet1")
@@ -3656,17 +3673,44 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
 
         # =====================================================================
         # 📥 मास्टर एक्सेल डाउनलोड (P5 के सबसे नीचे) — ऊपर जितनी भी लिस्ट/डिग्री
-        # बनी हैं (UG + PG दोनों), वो सब एक ही Excel फ़ाइल में 6 शीट के रूप में आ जाएँगी।
+        # बनी हैं (UG + PG दोनों), वो सब एक ही Excel फ़ाइल में 7 शीट के रूप में आ जाएँगी।
         # =====================================================================
         st.divider()
-        st.markdown("### 📥 मास्टर एक्सेल डाउनलोड करें (6 शीट)")
+        st.markdown("### 📥 मास्टर एक्सेल डाउनलोड करें (7 शीट)")
         st.caption(
-            "Sheet 1-2: UG/PG का पूरा रॉ डेटा (🔵 खाली | 🔴 गलत | 🟢 Approved)  |  "
-            "Sheet 3: ब्रांच-वाइज विषय शीट (Total Admission + Minor/MDC/Voc/PW के नाम व संख्या)  |  "
-            "Sheet 4: डिग्री+ब्रांच-वाइज समरी (Minor+MDC+Voc+PW सभी एक साथ)  |  "
-            "Sheet 5: जिन छात्रों का कोई विषय गलत/खाली है, उनकी पूरी लिस्ट + कारण  |  "
-            "Sheet 6: Sheet 5 में से जो पहले ही Approve हो चुके हैं, उनकी लिस्ट।"
+            "Sheet 1: नीचे आप जो फ़ाइल अपलोड करेंगे, वह जस की तस  |  "
+            "Sheet 2-3: UG/PG का पूरा रॉ डेटा (🔵 खाली | 🔴 गलत | 🟢 Approved)  |  "
+            "Sheet 4: ब्रांच-वाइज विषय शीट (Total Admission + Minor/MDC/Voc/PW के नाम व संख्या)  |  "
+            "Sheet 5: डिग्री+ब्रांच-वाइज समरी (Minor+MDC+Voc+PW सभी एक साथ)  |  "
+            "Sheet 6: जिन छात्रों का कोई विषय गलत/खाली है, उनकी पूरी लिस्ट + कारण  |  "
+            "Sheet 7: Sheet 6 में से जो पहले ही Approve हो चुके हैं, उनकी लिस्ट।"
         )
+
+        st.markdown("#### 📎 Sheet 1 के लिए फ़ाइल अपलोड करें")
+        st.caption("यह फ़ाइल बिना किसी बदलाव के, जस की तस, मास्टर एक्सेल की पहली शीट पर आ जाएगी।")
+        _p5_s1_file = st.file_uploader(
+            "फ़ाइल चुनें (CSV / XLS / XLSX)",
+            type=["csv", "xls", "xlsx"],
+            key="p5_sheet1_uploader"
+        )
+        _p5_sheet1_df = None
+        _p5_sheet1_name = "Uploaded_File"
+        if _p5_s1_file is not None:
+            try:
+                _p5_s1_raw = _p5_s1_file.getvalue()
+                if _p5_s1_file.name.lower().endswith(".csv"):
+                    _p5_sheet1_df = pd.read_csv(io.BytesIO(_p5_s1_raw), encoding="utf-8-sig")
+                else:
+                    _p5_s1_sheets = get_excel_sheet_names(_p5_s1_raw)
+                    _p5_s1_choice = 0
+                    if len(_p5_s1_sheets) > 1:
+                        _p5_s1_choice = st.selectbox("📑 कौन सी शीट लेनी है?", _p5_s1_sheets, key="p5_sheet1_sheet_select")
+                    _p5_sheet1_df = excel_bytes_to_dataframe(_p5_s1_raw, _p5_s1_choice)
+                _p5_sheet1_name = os.path.splitext(_p5_s1_file.name)[0] or "Uploaded_File"
+                st.success(f"🎉 फ़ाइल लोड हो गई ({len(_p5_sheet1_df)} रोज़) — यह Sheet 1 पर जस की तस जाएगी।")
+            except Exception as _e_s1:
+                st.error(f"फ़ाइल पढ़ने में त्रुटि: {_e_s1}")
+                _p5_sheet1_df = None
 
         _p5_ug_key_col = find_student_key_col(df_ug_all) if (df_ug_all is not None and not df_ug_all.empty) else None
         _p5_pg_key_col = find_student_key_col(df_pg_all) if (df_pg_all is not None and not df_pg_all.empty) else None
@@ -3856,10 +3900,11 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
                 _p5_ug_blocks, _p5_pg_blocks,
                 _p5_ug_summary, _p5_pg_summary,
                 _p5_ug_students, _p5_ug_flags, _p5_ug_approved,
-                _p5_pg_students, _p5_pg_flags, _p5_pg_approved
+                _p5_pg_students, _p5_pg_flags, _p5_pg_approved,
+                sheet1_df=_p5_sheet1_df, sheet1_name=_p5_sheet1_name
             )
             st.download_button(
-                label="📥 मास्टर एक्सेल डाउनलोड करें (6 शीट: UG+PG लिस्ट, ब्रांच-वाइज विषय, समरी, Reason, Approved)",
+                label="📥 मास्टर एक्सेल डाउनलोड करें (7 शीट: अपलोड फ़ाइल, UG+PG लिस्ट, ब्रांच-वाइज विषय, समरी, Reason, Approved)",
                 data=_p5_master_excel_bytes,
                 file_name="P5_Master_Dashboard_Data.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
