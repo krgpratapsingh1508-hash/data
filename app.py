@@ -1036,6 +1036,32 @@ def load_permanent_data(course_type):
         return pd.DataFrame()
     return pd.DataFrame(all_records)
 
+def save_p1_last_upload(df, filename):
+    """📥 Entry Panel में जो भी फ़ाइल आखिरी बार अपलोड/लोड हुई, उसे परमानेंट रूप से सेव करता है
+    (raw_store की तरह ट्रांसफर पर डिलीट नहीं होती) — ताकि P5 के मास्टर एक्सेल की Sheet 1 पर
+    वही मूल फ़ाइल जस की तस दी जा सके।"""
+    try:
+        set_app_setting("p1_last_upload_data", json.dumps(df.to_dict(orient='records')))
+        set_app_setting("p1_last_upload_name", filename or "Uploaded_File")
+    except Exception:
+        pass
+
+def load_p1_last_upload():
+    """Entry Panel में आखिरी बार अपलोड हुई फ़ाइल (DataFrame, फ़ाइल-नाम) लौटाता है।"""
+    _name = get_app_setting("p1_last_upload_name", "Uploaded_File")
+    _data = get_app_setting("p1_last_upload_data")
+    if not _data:
+        return None, _name
+    try:
+        _records = json.loads(_data)
+        if isinstance(_records, dict):
+            _records = [_records]
+        if not _records:
+            return None, _name
+        return pd.DataFrame(_records), _name
+    except (json.JSONDecodeError, TypeError):
+        return None, _name
+
 def load_raw_data():
     cursor.execute("SELECT data_json FROM raw_store ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
@@ -2661,6 +2687,9 @@ if active_panel == "📥 1. Entry / Upload Panel":
             else:
                 df = pd.read_csv(f)
             st.success(f"🎉 फ़ाइल सफलतापूर्वक लोड हो गई ({len(df)} रोज़)!")
+
+            # 🆕 इस अपलोड को परमानेंट रूप से सेव करना (P5 मास्टर एक्सेल की Sheet 1 के लिए)
+            save_p1_last_upload(df, os.path.splitext(f.name)[0])
             
             # डेटा को P2 में ट्रांसफर करने का बटन
             if st.button("📤 वर्क/अप्रूवल पैनल (P2) में ट्रांसफर करें", key="transfer_p2_btn", type="primary"):
@@ -3678,7 +3707,7 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
         st.divider()
         st.markdown("### 📥 मास्टर एक्सेल डाउनलोड करें (7 शीट)")
         st.caption(
-            "Sheet 1: नीचे आप जो फ़ाइल अपलोड करेंगे, वह जस की तस  |  "
+            "Sheet 1: Entry Panel (P1) में जो फ़ाइल अपलोड की गई थी, वह जस की तस  |  "
             "Sheet 2-3: UG/PG का पूरा रॉ डेटा (🔵 खाली | 🔴 गलत | 🟢 Approved)  |  "
             "Sheet 4: ब्रांच-वाइज विषय शीट (Total Admission + Minor/MDC/Voc/PW के नाम व संख्या)  |  "
             "Sheet 5: डिग्री+ब्रांच-वाइज समरी (Minor+MDC+Voc+PW सभी एक साथ)  |  "
@@ -3686,31 +3715,11 @@ elif active_panel == "📊 5. Dashboard / Counter Panel":
             "Sheet 7: Sheet 6 में से जो पहले ही Approve हो चुके हैं, उनकी लिस्ट।"
         )
 
-        st.markdown("#### 📎 Sheet 1 के लिए फ़ाइल अपलोड करें")
-        st.caption("यह फ़ाइल बिना किसी बदलाव के, जस की तस, मास्टर एक्सेल की पहली शीट पर आ जाएगी।")
-        _p5_s1_file = st.file_uploader(
-            "फ़ाइल चुनें (CSV / XLS / XLSX)",
-            type=["csv", "xls", "xlsx"],
-            key="p5_sheet1_uploader"
-        )
-        _p5_sheet1_df = None
-        _p5_sheet1_name = "Uploaded_File"
-        if _p5_s1_file is not None:
-            try:
-                _p5_s1_raw = _p5_s1_file.getvalue()
-                if _p5_s1_file.name.lower().endswith(".csv"):
-                    _p5_sheet1_df = pd.read_csv(io.BytesIO(_p5_s1_raw), encoding="utf-8-sig")
-                else:
-                    _p5_s1_sheets = get_excel_sheet_names(_p5_s1_raw)
-                    _p5_s1_choice = 0
-                    if len(_p5_s1_sheets) > 1:
-                        _p5_s1_choice = st.selectbox("📑 कौन सी शीट लेनी है?", _p5_s1_sheets, key="p5_sheet1_sheet_select")
-                    _p5_sheet1_df = excel_bytes_to_dataframe(_p5_s1_raw, _p5_s1_choice)
-                _p5_sheet1_name = os.path.splitext(_p5_s1_file.name)[0] or "Uploaded_File"
-                st.success(f"🎉 फ़ाइल लोड हो गई ({len(_p5_sheet1_df)} रोज़) — यह Sheet 1 पर जस की तस जाएगी।")
-            except Exception as _e_s1:
-                st.error(f"फ़ाइल पढ़ने में त्रुटि: {_e_s1}")
-                _p5_sheet1_df = None
+        _p5_sheet1_df, _p5_sheet1_name = load_p1_last_upload()
+        if _p5_sheet1_df is not None and not _p5_sheet1_df.empty:
+            st.caption(f"📎 Sheet 1 में जाएगी: '{_p5_sheet1_name}' ({len(_p5_sheet1_df)} रोज़, Entry Panel की आखिरी अपलोड)")
+        else:
+            st.caption("📎 Sheet 1 खाली रहेगी — अभी तक Entry Panel (P1) में कोई फ़ाइल अपलोड नहीं हुई है।")
 
         _p5_ug_key_col = find_student_key_col(df_ug_all) if (df_ug_all is not None and not df_ug_all.empty) else None
         _p5_pg_key_col = find_student_key_col(df_pg_all) if (df_pg_all is not None and not df_pg_all.empty) else None
