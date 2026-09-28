@@ -950,8 +950,9 @@ conn.commit()
 # पैनल-की और उसके डिस्प्ले नाम की मैपिंग
 PANEL_KEY_TO_NAME = {
     "p1": "📥 1. Entry / Upload Panel",
-    "p2": "💻 2+3. Work / UG Panel",   # 🔀 पुराने P2 (Work/Approve) + P3 (UG) का मर्ज
-    "p4": "📜 4. PG Panel",
+    "p2": "💻 2. Work / Approve Panel",
+    "p3": "🎓 3. UG + PG Panel",
+    "p4": "📄 4. Documents Panel",
     "p5": "📊 5. Dashboard / Counter Panel",
     "p6": "⚙️ 6. Admin Panel",
 }
@@ -987,6 +988,37 @@ cursor.execute("""
     )
 """)
 conn.commit()
+
+# 5a. 📄 Documents Submit / Not Submit स्टोरेज (Panel 4 में Application No. के हिसाब से)
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS doc_submit_status (
+        app_no TEXT PRIMARY KEY,
+        status TEXT,
+        updated_at TEXT
+    )
+""")
+conn.commit()
+
+def get_all_doc_status():
+    cursor.execute("SELECT app_no, status FROM doc_submit_status")
+    return {r[0]: r[1] for r in cursor.fetchall()}
+
+def set_doc_status(app_no, status):
+    import datetime as _dt
+    cursor.execute("""
+        INSERT INTO doc_submit_status (app_no, status, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(app_no) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at
+    """, (app_no, status, _dt.datetime.now().strftime("%d-%m-%Y %H:%M")))
+    conn.commit()
+
+def norm_app_no(v):
+    """Application No. को एक जैसा बनाना (जैसे 1234.0 → 1234, खाली/space हटाना)"""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    t = str(v).strip()
+    if t.endswith(".0") and t[:-2].isdigit():
+        t = t[:-2]
+    return t
 
 # 5. ऐप सेटिंग्स स्टोरेज (Login टाइटल + लोगो — सिर्फ Admin बदल सकता है)
 cursor.execute("""
@@ -1200,116 +1232,6 @@ def render_print_button(df, title, button_label="🖨️ इस लिस्ट 
     """
     components.html(btn_html, height=64)
 
-# =========================================================================
-# 📄 Doc. Submit / Not Submit — Application No. डालकर स्टेटस सेव करना
-# =========================================================================
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS doc_status (
-        app_no TEXT PRIMARY KEY,
-        status TEXT,
-        updated_at TEXT
-    )
-""")
-conn.commit()
-
-DOC_SUBMIT = "Submit"
-DOC_NOT_SUBMIT = "Not Submit"
-
-def _norm_app(x):
-    s_ = "" if pd.isna(x) else str(x).strip()
-    return s_[:-2] if s_.endswith(".0") else s_
-
-def find_app_no_col(df):
-    norm = {c: str(c).lower().replace(" ", "").replace(".", "").replace("_", "") for c in df.columns}
-    for kws in (["applicationno", "applicationnumber", "applicationid", "appno", "applno"],
-                ["formno", "formnumber", "appid"], ["application"]):
-        for c in df.columns:
-            if any(k in norm[c] for k in kws):
-                return c
-    return None
-
-def get_all_doc_status():
-    cursor.execute("SELECT app_no, status FROM doc_status")
-    return {r[0]: r[1] for r in cursor.fetchall()}
-
-def _doc_click(app_no, status):
-    """बटन दबते ही सेव (callback) — फिर इनपुट खाली, ताकि अगला Application No. सीधे डाला जा सके।"""
-    cursor.execute("""
-        INSERT INTO doc_status (app_no, status, updated_at) VALUES (?, ?, ?)
-        ON CONFLICT(app_no) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at
-    """, (app_no, status, datetime.datetime.now().strftime("%d-%m-%Y %H:%M")))
-    conn.commit()
-    st.session_state["doc_flash"] = f"Application No. {app_no} → Doc. {status} सेव हो गया।"
-    st.session_state["doc_app_input"] = ""
-
-def render_full_list_with_doc_status():
-    st.subheader("📋 पूरी लिस्ट (सभी कॉलम) + Doc. Submit / Not Submit")
-    df_all = load_permanent_data("UG")
-    if df_all is None or df_all.empty:
-        st.info("ℹ️ UG डेटाबेस खाली है। पहले '1. Work / Approve' टैब से डेटा अप्रूव करें।")
-        return
-
-    cols_ = list(df_all.columns)
-    guess = find_app_no_col(df_all)
-    app_col = st.selectbox("Application No. वाला कॉलम:", cols_,
-                           index=cols_.index(guess) if guess in cols_ else 0, key="doc_app_col")
-    df_all = df_all.copy()
-    df_all["_app"] = df_all[app_col].map(_norm_app)
-    statuses = get_all_doc_status()
-
-    _flash = st.session_state.pop("doc_flash", None)
-    if _flash:
-        st.success(_flash)
-
-    app_in = st.text_input("🔎 Application No. डालें (लिखकर Enter दबाएँ):", key="doc_app_input")
-    q = _norm_app(app_in)
-    if q:
-        hit = df_all[df_all["_app"] == q]
-        if hit.empty:
-            st.error(f"❌ Application No. '{q}' UG लिस्ट में नहीं मिला।")
-        else:
-            st.dataframe(hit.drop(columns=["_app"]), hide_index=True, use_container_width=True)
-            _cur = statuses.get(q)
-            st.info(f"अभी का Doc. स्टेटस: {_cur if _cur else 'अभी तय नहीं (Pending)'}")
-            st.write("**इस Application का Doc. Submit हुआ या नहीं? जिस पर क्लिक करेंगे वही सेव होगा:**")
-            b1, b2 = st.columns(2)
-            with b1:
-                st.button("✅ Doc. Submit", key="approve_doc_submit", use_container_width=True,
-                          on_click=_doc_click, args=(q, DOC_SUBMIT))
-            with b2:
-                st.button("❌ Not Submit", key="danger_doc_not_submit", use_container_width=True,
-                          on_click=_doc_click, args=(q, DOC_NOT_SUBMIT))
-
-    # ---- पूरी लिस्ट: सभी कॉलम + Doc Status ----
-    _lbl = {DOC_SUBMIT: "✅ Submit", DOC_NOT_SUBMIT: "❌ Not Submit"}
-    stat_s = df_all["_app"].map(lambda k: _lbl.get(statuses.get(k), "⏳ Pending"))
-    df_show = df_all.drop(columns=["_app"])
-    df_show.insert(cols_.index(app_col) + 1, "📄 Doc Status", stat_s.values)
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("👥 कुल छात्र", len(df_show))
-    m2.metric("✅ Submit", int((stat_s == _lbl[DOC_SUBMIT]).sum()))
-    m3.metric("❌ Not Submit", int((stat_s == _lbl[DOC_NOT_SUBMIT]).sum()))
-    m4.metric("⏳ Pending", int((stat_s == "⏳ Pending").sum()))
-
-    pick = st.radio("लिस्ट फ़िल्टर:", ["सभी", "✅ Submit", "❌ Not Submit", "⏳ Pending"], horizontal=True, key="doc_list_filter")
-    if pick != "सभी":
-        df_show = df_show[df_show["📄 Doc Status"] == pick]
-    df_show.index = range(1, len(df_show) + 1)
-
-    def _doc_styler(d):
-        out = pd.DataFrame("", index=d.index, columns=d.columns)
-        for i_, v_ in d["📄 Doc Status"].items():
-            if v_.startswith("✅"):
-                out.at[i_, "📄 Doc Status"] = 'background-color: #d4edda; color: #155724; font-weight: bold;'
-            elif v_.startswith("❌"):
-                out.at[i_, "📄 Doc Status"] = 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-        return out
-
-    st.dataframe(df_show.style.apply(_doc_styler, axis=None), height=550, use_container_width=True)
-    st.download_button("📥 यह लिस्ट CSV में डाउनलोड करें", data=df_show.to_csv(index=False).encode("utf-8-sig"),
-                       file_name="UG_List_With_Doc_Status.csv", mime="text/csv", key="doc_list_csv_dl")
-
 # Session States Management
 if "ok" not in st.session_state: st.session_state["ok"] = False
 if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
@@ -1317,7 +1239,7 @@ if "deleted_cols" not in st.session_state: st.session_state["deleted_cols"] = []
 # --- LOGIN SYSTEM (पैनल-वाइज: हर पैनल का अपना पासवर्ड) ---
 # 🔧 फिक्स: पुराने सेशन (जिसमें "ok"=True था लेकिन "panel" key नहीं थी) की वजह से
 # KeyError न आए, इसलिए दोनों चीज़ें एक साथ चेक कर रहे हैं
-if not st.session_state["ok"] or st.session_state.get("panel") not in PANEL_NAME_TO_KEY:
+if not st.session_state["ok"] or "panel" not in st.session_state:
     st.session_state["ok"] = False
 
     left, mid, right = st.columns([1, 1.3, 1])
@@ -1427,7 +1349,7 @@ if is_admin_session:
     st.sidebar.divider()
     admin_view_choice = st.sidebar.selectbox(
         "👁️ पैनल देखें (Admin View):",
-        ["⚙️ 6. Admin Panel"] + [PANEL_KEY_TO_NAME[k] for k in ["p1", "p2", "p4", "p5"]],
+        ["⚙️ 6. Admin Panel"] + [PANEL_KEY_TO_NAME[k] for k in ["p1", "p2", "p3", "p4", "p5"]],
         key="admin_view_selector"
     )
     active_panel = admin_view_choice
@@ -2823,258 +2745,325 @@ if active_panel == "📥 1. Entry / Upload Panel":
 # =========================================================================
 # 💻 PANEL 2: WORK / APPROVE PANEL (कॉलम मूव + लाइव स्प्लिट + डेटाबेस रूटिंग)
 # =========================================================================
-elif active_panel == "💻 2+3. Work / UG Panel":
-    st.title("💻 Work / UG Panel - डेटा प्रोसेसिंग, पूरी लिस्ट एवं Doc. Status")
+elif active_panel == "💻 2. Work / Approve Panel":
+    st.title("💻 Work / Approve Panel - डेटा प्रोसेसिंग एवं अप्रूवल")
     if is_panel_hidden("p2") and not is_admin_session:
         st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
         st.dataframe(pd.DataFrame(), use_container_width=True)
         st.stop()
-
-    _tab_work, _tab_list, _tab_ug = st.tabs([
-        "🛠️ 1. Work / Approve",
-        "📋 2. पूरी लिस्ट + Doc. Status",
-        "🎓 3. UG नियम एवं जाँच",
-    ])
-
-    with _tab_work:
     
-        # Panel 1 से ट्रांसफर होकर आया हुआ Staging (Raw) डेटा लोड करना
-        raw_df = load_raw_data()
+    # Panel 1 से ट्रांसफर होकर आया हुआ Staging (Raw) डेटा लोड करना
+    raw_df = load_raw_data()
     
-        if raw_df is None or raw_df.empty:
-            st.info("📥 वर्तमान में कोई नई अपलोड की गई फ़ाइल पेंडिंग नहीं है। कृपया पहले 'Entry / Upload Panel (P1)' से फ़ाइल अपलोड करें।")
-        else:
-            # --- कार्य 1: बेकार कॉलम हटाना ---
-            st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Unwanted Columns)")
-            active_cols = [c for c in raw_df.columns if c not in st.session_state["deleted_cols"]]
+    if raw_df is None or raw_df.empty:
+        st.info("📥 वर्तमान में कोई नई अपलोड की गई फ़ाइल पेंडिंग नहीं है। कृपया पहले 'Entry / Upload Panel (P1)' से फ़ाइल अपलोड करें।")
+    else:
+        # --- कार्य 1: बेकार कॉलम हटाना ---
+        st.subheader("🗑️ बेकार कॉलम हटाएं (Remove Unwanted Columns)")
+        active_cols = [c for c in raw_df.columns if c not in st.session_state["deleted_cols"]]
         
-            cols_to_delete = st.multiselect("हटाने के लिए अनुपयोगी कॉलम चुनें:", options=active_cols)
-            if cols_to_delete:
-                if st.button("🔴 चुने गए कॉलम हटाएं", key="danger_delete_cols_btn"):
-                    st.session_state["deleted_cols"].extend(cols_to_delete)
-                    st.success("चयनित कॉलम स्क्रीन से हटा दिए गए!")
-                    st.rerun()
+        cols_to_delete = st.multiselect("हटाने के लिए अनुपयोगी कॉलम चुनें:", options=active_cols)
+        if cols_to_delete:
+            if st.button("🔴 चुने गए कॉलम हटाएं", key="danger_delete_cols_btn"):
+                st.session_state["deleted_cols"].extend(cols_to_delete)
+                st.success("चयनित कॉलम स्क्रीन से हटा दिए गए!")
+                st.rerun()
         
-            final_raw_df = raw_df[active_cols]
+        final_raw_df = raw_df[active_cols]
 
-            # --- कार्य 2: 🔄 कॉलमों का क्रम बदलना (Left/Right Move Feature) ---
-            st.divider()
-            st.subheader("🔄 कॉलमों का क्रम बदलें (Move Columns Left/Right)")
-            st.write("नीचे दिए गए बॉक्स में क्रम बदलकर कॉलम को आगे-पीछे सेट करें। अप्रूवल के बाद इसी क्रम में लिस्ट लॉक होगी:")
+        # --- कार्य 2: 🔄 कॉलमों का क्रम बदलना (Left/Right Move Feature) ---
+        st.divider()
+        st.subheader("🔄 कॉलमों का क्रम बदलें (Move Columns Left/Right)")
+        st.write("नीचे दिए गए बॉक्स में क्रम बदलकर कॉलम को आगे-पीछे सेट करें। अप्रूवल के बाद इसी क्रम में लिस्ट लॉक होगी:")
         
-            reordered_cols = st.multiselect(
-                "कॉलमों का नया क्रम तय करें (सभी आवश्यक कॉलम इसी क्रम में चुनें):",
-                options=active_cols,
-                default=active_cols,
-                key="col_reorder_select"
-            )
+        reordered_cols = st.multiselect(
+            "कॉलमों का नया क्रम तय करें (सभी आवश्यक कॉलम इसी क्रम में चुनें):",
+            options=active_cols,
+            default=active_cols,
+            key="col_reorder_select"
+        )
         
-            missing_cols = [c for c in active_cols if c not in reordered_cols]
-            if missing_cols:
-                reordered_cols.extend(missing_cols)
+        missing_cols = [c for c in active_cols if c not in reordered_cols]
+        if missing_cols:
+            reordered_cols.extend(missing_cols)
             
-            final_raw_df = final_raw_df[reordered_cols]
+        final_raw_df = final_raw_df[reordered_cols]
         
-            deg_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), final_raw_df.columns)
-            br_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), final_raw_df.columns if len(final_raw_df.columns) > 1 else final_raw_df.columns)
+        deg_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['deg', 'course', 'class'])), final_raw_df.columns)
+        br_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['branch', 'stream', 'subject'])), final_raw_df.columns if len(final_raw_df.columns) > 1 else final_raw_df.columns)
         
-            # --- कार्य 3: विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करना ---
-            st.divider()
-            st.subheader("❌ विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करें")
-            st.write("यदि आप किसी खास कोर्स या स्ट्रीम का पूरा डेटा हटाना चाहते हैं, तो यहाँ से चुनें:")
+        # --- कार्य 3: विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करना ---
+        st.divider()
+        st.subheader("❌ विशिष्ट डिग्री / ब्रांच की पूरी रो डिलीट करें")
+        st.write("यदि आप किसी खास कोर्स या स्ट्रीम का पूरा डेटा हटाना चाहते हैं, तो यहाँ से चुनें:")
         
-            c_row1, c_row2 = st.columns(2)
-            with c_row1:
-                unique_degrees = final_raw_df[deg_col].dropna().unique().tolist()
-                selected_degs = st.multiselect("डिलीट करने के लिए डिग्री (Course) चुनें:", options=unique_degrees)
-            with c_row2:
-                unique_branches = final_raw_df[br_col].dropna().unique().tolist()
-                selected_branches = st.multiselect("डिलीट करने के लिए ब्रांच (Stream) चुनें:", options=unique_branches)
+        c_row1, c_row2 = st.columns(2)
+        with c_row1:
+            unique_degrees = final_raw_df[deg_col].dropna().unique().tolist()
+            selected_degs = st.multiselect("डिलीट करने के लिए डिग्री (Course) चुनें:", options=unique_degrees)
+        with c_row2:
+            unique_branches = final_raw_df[br_col].dropna().unique().tolist()
+            selected_branches = st.multiselect("डिलीट करने के लिए ब्रांच (Stream) चुनें:", options=unique_branches)
             
-            if selected_degs or selected_branches:
-                if st.button("🗑️ चुनी हुई रोज़ हमेशा के लिए डिलीट करें", key="danger_delete_rows_btn"):
-                    filtered_rows = []
-                    for _, row in raw_df.iterrows():
-                        match_deg = str(row[deg_col]) in selected_degs if selected_degs else False
-                        match_br = str(row[br_col]) in selected_branches if selected_branches else False
-                        if not (match_deg or match_br):
-                            filtered_rows.append(row.to_dict())
+        if selected_degs or selected_branches:
+            if st.button("🗑️ चुनी हुई रोज़ हमेशा के लिए डिलीट करें", key="danger_delete_rows_btn"):
+                filtered_rows = []
+                for _, row in raw_df.iterrows():
+                    match_deg = str(row[deg_col]) in selected_degs if selected_degs else False
+                    match_br = str(row[br_col]) in selected_branches if selected_branches else False
+                    if not (match_deg or match_br):
+                        filtered_rows.append(row.to_dict())
                 
-                    cursor.execute("DELETE FROM raw_store")
-                    if filtered_rows:
-                        cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(filtered_rows),))
-                    conn.commit()
-                    st.success("🎉  चयनित डिग्री/ब्रांच की सभी रोज़ को सफलतापूर्वक डिलीट कर दिया गया है!")
-                    st.rerun()
-
-            # फ़िल्टर्ड और रीऑर्डर किए गए डेटा का लाइव प्रीव्यू दिखाना
-            st.divider()
-            st.subheader("📋 अपलोड किए गए रॉ डेटा का लाइव प्रीव्यू (संशोधित क्रम)")
-            st.dataframe(final_raw_df, height=350, use_container_width=True)
-        
-            el_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['elig', 'qual', 'class', 'course', 'deg'])), final_raw_df.columns)
-            st.info(f"🔍 सिस्टम ऑटो-वर्गीकरण के लिए **'{el_col}'** कॉलम का उपयोग कर रहा है।")
-        
-            st.subheader("👀 लाइव प्री-विभाजन समीक्षा (Live Split Preview)")
-            ug_preview_rows = []
-            pg_preview_rows = []
-        
-            for _, row in final_raw_df.iterrows():
-                if is_pg_route_value(row[el_col]):
-                    pg_preview_rows.append(row.to_dict())
-                else:
-                    ug_preview_rows.append(row.to_dict())
-                
-            df_ug_preview = pd.DataFrame(ug_preview_rows)
-            df_pg_preview = pd.DataFrame(pg_preview_rows)
-        
-            prev_tab1, prev_tab2 = st.tabs([f"🎓 UG में जाने वाला डेटा ({len(df_ug_preview)} रोज़)", f"📜 PG में जाने वाला डेटा ({len(df_pg_preview)} रोज़)"])
-        
-            with prev_tab1:
-                if not df_ug_preview.empty: st.dataframe(df_ug_preview, height=250, use_container_width=True)
-                else: st.caption("कोई डेटा UG श्रेणी में नहीं मिला।")
-            with prev_tab2:
-                if not df_pg_preview.empty: st.dataframe(df_pg_preview, height=250, use_container_width=True)
-                else: st.caption("कोई डेटा PG श्रेणी में नहीं मिला।")
-
-            # --- कार्य 4: फाइनल अप्रूवल और रूटिंग एक्शन (नया क्रम डेटाबेस में लॉक होगा) ---
-            st.divider()
-            st.subheader("🚀 FINAL ACTION")
-            st.write("📈 **डेटा ट्रांसफर:** क्लीन और रीऑर्डर किए गए छात्रों के डेटा को आगे UG (P3) और PG (P4) पैनल में भेजने के लिए यह बटन दबाएँ।")
-        
-            if st.button("✅ डेटा अप्रूव करें और पैनल्स में ट्रांसफर करें", key="approve_transfer_all_btn"):
-                if not df_ug_preview.empty:
-                    ug_json_str = json.dumps(df_ug_preview[reordered_cols].to_dict(orient='records'))
-                    cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (ug_json_str, "UG"))
-                if not df_pg_preview.empty:
-                    pg_json_str = json.dumps(df_pg_preview[reordered_cols].to_dict(orient='records'))
-                    cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (pg_json_str, "PG"))
-            
                 cursor.execute("DELETE FROM raw_store")
+                if filtered_rows:
+                    cursor.execute("INSERT INTO raw_store (data_json) VALUES (?)", (json.dumps(filtered_rows),))
                 conn.commit()
-                st.success("🎉 बधाई हो! डेटा सफलतापूर्वक कस्टमाइज्ड क्रम में ट्रांसफर और लॉक कर दिया गया है।")
-                st.balloons()
+                st.success("🎉  चयनित डिग्री/ब्रांच की सभी रोज़ को सफलतापूर्वक डिलीट कर दिया गया है!")
                 st.rerun()
 
-
-    with _tab_list:
-        render_full_list_with_doc_status()
-
-    with _tab_ug:
-        df_ug = load_permanent_data("UG")
-    
-        if df_ug is None or df_ug.empty: 
-            st.info("ℹ️ UG डेटाबेस खाली है। कृपया पहले Panel 2 से डेटा अप्रूव करें।")
-        else:
-            # ℹ️ UG डेटाबेस की वो डिग्री जो इस पैनल की डिग्री-सूची में नहीं आतीं (इसलिए यहाँ नहीं दिखेंगी)
-            _ug_dc, _ = detect_deg_branch_cols(df_ug)
-            if _ug_dc:
-                _hidden_ug = sorted({
-                    d for d in df_ug[_ug_dc].map(_norm_blank_label).unique()
-                    if not any(k in d.lower().replace(".", "").replace(" ", "") for k in UG_ALLOWED_KEYWORDS)
-                })
-                if _hidden_ug:
-                    _pg_like = [d for d in _hidden_ug if is_pg_route_value(d)]
-                    _msg = ("ℹ️ UG डेटाबेस में ये डिग्री हैं पर इस पैनल की डिग्री-सूची (BA, B.Sc., B.Com., B.H.Sc., BBA, BCA...) में नहीं आतीं, "
-                            "इसलिए इस पैनल की टेबल में नहीं दिखेंगी (Dashboard में दिखेंगी): " + ", ".join(_hidden_ug))
-                    if _pg_like:
-                        _msg += (f"\n\nइनमें {', '.join(_pg_like)} PG की डिग्री लगती है — यह पुराना डेटा है जो पहले UG में चला गया था। "
-                                 "अब P2 में नई फ़ाइल आने पर ऐसी डिग्री अपने-आप PG में जाएगी।")
-                    st.info(_msg)
-
-            # ऑटो-कॉलम डिटेक्शन
-            minor_col = next((c for c in df_ug.columns if 'minor' in c.lower()), None)
-            mdc_col = next((c for c in df_ug.columns if 'mdc' in c.lower()), None)
-            voc_col = next((c for c in df_ug.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
-            pw_col = next((c for c in df_ug.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
+        # फ़िल्टर्ड और रीऑर्डर किए गए डेटा का लाइव प्रीव्यू दिखाना
+        st.divider()
+        st.subheader("📋 अपलोड किए गए रॉ डेटा का लाइव प्रीव्यू (संशोधित क्रम)")
+        st.dataframe(final_raw_df, height=350, use_container_width=True)
         
-            # ड्रॉपडाउन में दिखाने के लिए यूनिक लिस्ट
-            opt_minor = df_ug[minor_col].dropna().unique().tolist() if minor_col else []
-            opt_mdc = df_ug[mdc_col].dropna().unique().tolist() if mdc_col else []
-            opt_voc = df_ug[voc_col].dropna().unique().tolist() if voc_col else []
-            opt_pw = df_ug[pw_col].dropna().unique().tolist() if pw_col else []
+        el_col = next((c for c in final_raw_df.columns if any(k in c.lower() for k in ['elig', 'qual', 'class', 'course', 'deg'])), final_raw_df.columns)
+        st.info(f"🔍 सिस्टम ऑटो-वर्गीकरण के लिए **'{el_col}'** कॉलम का उपयोग कर रहा है।")
         
-            st.markdown("### 🛠️ स्टेप 1: डिग्री-वाइज मास्टर गाइडलाइन सेट करें")
-            st.caption("नीचे दी गई प्रत्येक डिग्री के बॉक्स को खोलकर उसके मान्य विषय चुनें और फिर 'लॉक करें' बटन दबाएं।")
+        st.subheader("👀 लाइव प्री-विभाजन समीक्षा (Live Split Preview)")
+        ug_preview_rows = []
+        pg_preview_rows = []
         
-            # --- डेटाबेस से पहले से सेव नियमों को सुरक्षित लोड करना ---
-            ug_master_rules = {}
-            try:
-                cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
-                locked_row = cursor.fetchone()
-                if locked_row and locked_row[0]:
-                    ug_master_rules = json.loads(locked_row[0])
-            except Exception as e:
-                pass
-
-            # आपकी मांगी गई 6 विशिष्ट डिग्रियां
-            target_degrees = ["BA", "B.Sc.", "B.Sc. Biotechnology", "B.H.Sc.", "B.Com.", "B.Com. Computer"]
-            current_configured_rules = {}
-        
-            for deg in target_degrees:
-                with st.expander(f"📘 {deg} के लिए वैध विषय नियम (Valid Subjects)"):
-                    c1, c2, c3, c4 = st.columns(4)
+        for _, row in final_raw_df.iterrows():
+            if is_pg_route_value(row[el_col]):
+                pg_preview_rows.append(row.to_dict())
+            else:
+                ug_preview_rows.append(row.to_dict())
                 
-                    # पहले से सेव नियमों को ड्रॉपडाउन में डिफ़ॉल्ट दिखाना
-                    saved_deg_rule = ug_master_rules.get(deg, {})
-                    default_min = [x for x in saved_deg_rule.get("minor", []) if x in opt_minor]
-                    default_mdc = [x for x in saved_deg_rule.get("mdc", []) if x in opt_mdc]
-                    default_voc = [x for x in saved_deg_rule.get("voc", []) if x in opt_voc]
-                    default_pw = [x for x in saved_deg_rule.get("pw", []) if x in opt_pw]
-                
-                    with c1:
-                        r_minor = st.multiselect(f"Valid Minor", opt_minor, default=default_min, key=f"ug_min_{deg}")
-                    with c2:
-                        r_mdc = st.multiselect(f"Valid MDC", opt_mdc, default=default_mdc, key=f"ug_mdc_{deg}")
-                    with c3:
-                        r_voc = st.multiselect(f"Valid Vocational", opt_voc, default=default_voc, key=f"ug_voc_{deg}")
-                    with c4:
-                        r_pw = st.multiselect(f"Valid PW/Ap/CE", opt_pw, default=default_pw, key=f"ug_pw_{deg}")
-                    
-                    current_configured_rules[deg] = {
-                        "minor": r_minor,
-                        "mdc": r_mdc,
-                        "voc": r_voc,
-                        "pw": r_pw
-                    }
+        df_ug_preview = pd.DataFrame(ug_preview_rows)
+        df_pg_preview = pd.DataFrame(pg_preview_rows)
         
-            # नियमों को डेटाबेस में लॉक करने का बटन
-            if st.button("🔒 UG मास्टर विषय नियमावली लॉक करें", key="lock_master_ug_btn"):
-                try:
-                    cursor.execute("""
-                        INSERT INTO locked_rules (panel_prefix, rules_json) 
-                        VALUES (?, ?)
-                        ON CONFLICT(panel_prefix) DO UPDATE SET rules_json = excluded.rules_json
-                    """, ("ug_master", json.dumps(current_configured_rules)))
-                    conn.commit()
-                    st.success("🎉 सभी डिग्रियों के नियम डेटाबेस में सुरक्षित हो गए हैं और नीचे की लिस्ट रंगीन हो गई है!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"त्रुटि: {e}")
+        prev_tab1, prev_tab2 = st.tabs([f"🎓 UG में जाने वाला डेटा ({len(df_ug_preview)} रोज़)", f"📜 PG में जाने वाला डेटा ({len(df_pg_preview)} रोज़)"])
+        
+        with prev_tab1:
+            if not df_ug_preview.empty: st.dataframe(df_ug_preview, height=250, use_container_width=True)
+            else: st.caption("कोई डेटा UG श्रेणी में नहीं मिला।")
+        with prev_tab2:
+            if not df_pg_preview.empty: st.dataframe(df_pg_preview, height=250, use_container_width=True)
+            else: st.caption("कोई डेटा PG श्रेणी में नहीं मिला।")
+
+        # --- कार्य 4: फाइनल अप्रूवल और रूटिंग एक्शन (नया क्रम डेटाबेस में लॉक होगा) ---
+        st.divider()
+        st.subheader("🚀 FINAL ACTION")
+        st.write("📈 **डेटा ट्रांसफर:** क्लीन और रीऑर्डर किए गए छात्रों के डेटा को आगे UG + PG (P3) पैनल में भेजने के लिए यह बटन दबाएँ।")
+        
+        if st.button("✅ डेटा अप्रूव करें और पैनल्स में ट्रांसफर करें", key="approve_transfer_all_btn"):
+            if not df_ug_preview.empty:
+                ug_json_str = json.dumps(df_ug_preview[reordered_cols].to_dict(orient='records'))
+                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (ug_json_str, "UG"))
+            if not df_pg_preview.empty:
+                pg_json_str = json.dumps(df_pg_preview[reordered_cols].to_dict(orient='records'))
+                cursor.execute("INSERT INTO perma_store (data_json, course_type) VALUES (?, ?)", (pg_json_str, "PG"))
             
-            st.divider()
+            cursor.execute("DELETE FROM raw_store")
+            conn.commit()
+            st.success("🎉 बधाई हो! डेटा सफलतापूर्वक कस्टमाइज्ड क्रम में ट्रांसफर और लॉक कर दिया गया है।")
+            st.balloons()
+            st.rerun()
+
+elif active_panel == "🎓 3. UG + PG Panel":
+    st.title("🎓 UG + PG चेकिंग एवं त्रुटि सुधार पैनल")
+    st.header("🎓 Undergraduate (UG) चेकिंग एवं त्रुटि सुधार")
+    if is_panel_hidden("p3") and not is_admin_session:
+        st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
+        st.dataframe(pd.DataFrame(), use_container_width=True)
+        st.stop()
+    df_ug = load_permanent_data("UG")
+    
+    if df_ug is None or df_ug.empty: 
+        st.info("ℹ️ UG डेटाबेस खाली है। कृपया पहले Panel 2 से डेटा अप्रूव करें।")
+    else:
+        # ℹ️ UG डेटाबेस की वो डिग्री जो इस पैनल की डिग्री-सूची में नहीं आतीं (इसलिए यहाँ नहीं दिखेंगी)
+        _ug_dc, _ = detect_deg_branch_cols(df_ug)
+        if _ug_dc:
+            _hidden_ug = sorted({
+                d for d in df_ug[_ug_dc].map(_norm_blank_label).unique()
+                if not any(k in d.lower().replace(".", "").replace(" ", "") for k in UG_ALLOWED_KEYWORDS)
+            })
+            if _hidden_ug:
+                _pg_like = [d for d in _hidden_ug if is_pg_route_value(d)]
+                _msg = ("ℹ️ UG डेटाबेस में ये डिग्री हैं पर इस पैनल की डिग्री-सूची (BA, B.Sc., B.Com., B.H.Sc., BBA, BCA...) में नहीं आतीं, "
+                        "इसलिए इस पैनल की टेबल में नहीं दिखेंगी (Dashboard में दिखेंगी): " + ", ".join(_hidden_ug))
+                if _pg_like:
+                    _msg += (f"\n\nइनमें {', '.join(_pg_like)} PG की डिग्री लगती है — यह पुराना डेटा है जो पहले UG में चला गया था। "
+                             "अब P2 में नई फ़ाइल आने पर ऐसी डिग्री अपने-आप PG में जाएगी।")
+                st.info(_msg)
+
+        # ऑटो-कॉलम डिटेक्शन
+        minor_col = next((c for c in df_ug.columns if 'minor' in c.lower()), None)
+        mdc_col = next((c for c in df_ug.columns if 'mdc' in c.lower()), None)
+        voc_col = next((c for c in df_ug.columns if 'voc' in c.lower() or 'skill' in c.lower()), None)
+        pw_col = next((c for c in df_ug.columns if any(k in c.lower() for k in ['pw', 'project', 'ce'])), None)
         
-            # लाइव वैलिडेशन टेबल रन करना (डेटाबेस से लोड किए गए नियमों को प्राथमिकता दें)
-            rules_to_apply = ug_master_rules if ug_master_rules else current_configured_rules
-            allowed_ug = list(UG_ALLOWED_KEYWORDS)
+        # ड्रॉपडाउन में दिखाने के लिए यूनिक लिस्ट
+        opt_minor = df_ug[minor_col].dropna().unique().tolist() if minor_col else []
+        opt_mdc = df_ug[mdc_col].dropna().unique().tolist() if mdc_col else []
+        opt_voc = df_ug[voc_col].dropna().unique().tolist() if voc_col else []
+        opt_pw = df_ug[pw_col].dropna().unique().tolist() if pw_col else []
         
-            process_panel_validation(df_ug, "ug", allowed_ug, master_rules=rules_to_apply)
+        st.markdown("### 🛠️ स्टेप 1: डिग्री-वाइज मास्टर गाइडलाइन सेट करें")
+        st.caption("नीचे दी गई प्रत्येक डिग्री के बॉक्स को खोलकर उसके मान्य विषय चुनें और फिर 'लॉक करें' बटन दबाएं।")
+        
+        # --- डेटाबेस से पहले से सेव नियमों को सुरक्षित लोड करना ---
+        ug_master_rules = {}
+        try:
+            cursor.execute("SELECT rules_json FROM locked_rules WHERE panel_prefix = 'ug_master'")
+            locked_row = cursor.fetchone()
+            if locked_row and locked_row[0]:
+                ug_master_rules = json.loads(locked_row[0])
+        except Exception as e:
+            pass
+
+        # आपकी मांगी गई 6 विशिष्ट डिग्रियां
+        target_degrees = ["BA", "B.Sc.", "B.Sc. Biotechnology", "B.H.Sc.", "B.Com.", "B.Com. Computer"]
+        current_configured_rules = {}
+        
+        for deg in target_degrees:
+            with st.expander(f"📘 {deg} के लिए वैध विषय नियम (Valid Subjects)"):
+                c1, c2, c3, c4 = st.columns(4)
+                
+                # पहले से सेव नियमों को ड्रॉपडाउन में डिफ़ॉल्ट दिखाना
+                saved_deg_rule = ug_master_rules.get(deg, {})
+                default_min = [x for x in saved_deg_rule.get("minor", []) if x in opt_minor]
+                default_mdc = [x for x in saved_deg_rule.get("mdc", []) if x in opt_mdc]
+                default_voc = [x for x in saved_deg_rule.get("voc", []) if x in opt_voc]
+                default_pw = [x for x in saved_deg_rule.get("pw", []) if x in opt_pw]
+                
+                with c1:
+                    r_minor = st.multiselect(f"Valid Minor", opt_minor, default=default_min, key=f"ug_min_{deg}")
+                with c2:
+                    r_mdc = st.multiselect(f"Valid MDC", opt_mdc, default=default_mdc, key=f"ug_mdc_{deg}")
+                with c3:
+                    r_voc = st.multiselect(f"Valid Vocational", opt_voc, default=default_voc, key=f"ug_voc_{deg}")
+                with c4:
+                    r_pw = st.multiselect(f"Valid PW/Ap/CE", opt_pw, default=default_pw, key=f"ug_pw_{deg}")
+                    
+                current_configured_rules[deg] = {
+                    "minor": r_minor,
+                    "mdc": r_mdc,
+                    "voc": r_voc,
+                    "pw": r_pw
+                }
+        
+        # नियमों को डेटाबेस में लॉक करने का बटन
+        if st.button("🔒 UG मास्टर विषय नियमावली लॉक करें", key="lock_master_ug_btn"):
+            try:
+                cursor.execute("""
+                    INSERT INTO locked_rules (panel_prefix, rules_json) 
+                    VALUES (?, ?)
+                    ON CONFLICT(panel_prefix) DO UPDATE SET rules_json = excluded.rules_json
+                """, ("ug_master", json.dumps(current_configured_rules)))
+                conn.commit()
+                st.success("🎉 सभी डिग्रियों के नियम डेटाबेस में सुरक्षित हो गए हैं और नीचे की लिस्ट रंगीन हो गई है!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"त्रुटि: {e}")
+            
+        st.divider()
+        
+        # लाइव वैलिडेशन टेबल रन करना (डेटाबेस से लोड किए गए नियमों को प्राथमिकता दें)
+        rules_to_apply = ug_master_rules if ug_master_rules else current_configured_rules
+        allowed_ug = list(UG_ALLOWED_KEYWORDS)
+        
+        process_panel_validation(df_ug, "ug", allowed_ug, master_rules=rules_to_apply)
+
+    # =====================================================================
+    # 📜 PG सेक्शन (पहले Panel 4 में था — अब Panel 3 में UG के नीचे)
+    # =====================================================================
+    st.divider()
+    st.header("📜 Postgraduate (PG) चेकिंग एवं त्रुटि सुधार")
+    df_pg = load_permanent_data("PG")
+    if df_pg is None or df_pg.empty:
+        st.info("ℹ️ PG डेटाबेस खाली है।")
+    else:
+        process_panel_validation(df_pg, "pg", list(PG_ROUTE_KEYWORDS))
 
 
 # =========================================================================
-# 📜 PANEL 4: PG PANEL
+# 📄 PANEL 4: DOCUMENTS PANEL (पूरी लिस्ट + Documents Submit कॉलम + Application No. सर्च)
 # =========================================================================
-elif active_panel == "📜 4. PG Panel":
-    st.title("📜 Postgraduate (PG) चेकिंग एवं त्रुटि सुधार पैनल")
+elif active_panel == "📄 4. Documents Panel":
+    st.title("📄 Documents Submit ट्रैकिंग पैनल")
     if is_panel_hidden("p4") and not is_admin_session:
         st.warning("🔒 यह पैनल फिलहाल Admin द्वारा Hide किया गया है। डेटा उपलब्ध नहीं है।")
         st.dataframe(pd.DataFrame(), use_container_width=True)
         st.stop()
-    df_pg = load_permanent_data("PG")
-    if df_pg is None or df_pg.empty: 
-        st.info("ℹ️ PG डेटाबेस खाली है।")
-    else: 
-        process_panel_validation(df_pg, "pg", list(PG_ROUTE_KEYWORDS))
+
+    _frames = [d for d in (load_permanent_data("UG"), load_permanent_data("PG")) if d is not None and not d.empty]
+    if not _frames:
+        st.info("ℹ️ अभी कोई डेटा नहीं है। कृपया पहले Panel 2 से डेटा अप्रूव करें।")
+    else:
+        df_full = pd.concat(_frames, ignore_index=True)
+
+        # --- Application No. वाला कॉलम ढूंढना (चाहें तो नीचे से बदल सकते हैं) ---
+        _all_cols = list(df_full.columns)
+        _auto_col = None
+        for _kw in ["application", "appl", "app no", "app_no", "appno", "form"]:
+            _auto_col = next((c for c in _all_cols if _kw in str(c).lower()), None)
+            if _auto_col:
+                break
+        if not _auto_col:
+            _auto_col = find_student_key_col(df_full) or _all_cols[0]
+        with st.expander("⚙️ Application No. कौन-सा कॉलम है? (ज़रूरत हो तभी बदलें)"):
+            app_col = st.selectbox("Application No. कॉलम:", _all_cols, index=_all_cols.index(_auto_col), key="p4_app_col")
+
+        # --- Documents Submit कॉलम जोड़ना ---
+        _status_map = get_all_doc_status()
+        _icon = {"Submit": "✅ Submit", "Not Submit": "❌ Not Submit"}
+        _norm_keys = df_full[app_col].map(norm_app_no)
+        DOC_COL = "📄 Documents Submit"
+        df_show = df_full.copy()
+        df_show[DOC_COL] = _norm_keys.map(lambda k: _icon.get(_status_map.get(k), "—"))
+
+        # --- लिस्ट Hide / Unhide बटन ---
+        if "p4_list_visible" not in st.session_state:
+            st.session_state["p4_list_visible"] = True
+        _vis = st.session_state["p4_list_visible"]
+        _c_btn, _c_info = st.columns([1, 3])
+        with _c_btn:
+            if st.button("🙈 लिस्ट Hide करें" if _vis else "👁️ लिस्ट Unhide करें", key="p4_toggle_list_btn", use_container_width=True):
+                st.session_state["p4_list_visible"] = not _vis
+                st.rerun()
+        with _c_info:
+            _n_sub = int((df_show[DOC_COL] == _icon["Submit"]).sum())
+            _n_not = int((df_show[DOC_COL] == _icon["Not Submit"]).sum())
+            st.caption(f"कुल: {len(df_show)} | ✅ Submit: {_n_sub} | ❌ Not Submit: {_n_not} | बाकी: {len(df_show) - _n_sub - _n_not}")
+
+        if _vis:
+            st.dataframe(df_show, height=450, use_container_width=True)
+        else:
+            st.info("🙈 लिस्ट अभी Hide है। देखने के लिए 'लिस्ट Unhide करें' दबाएँ।")
+
+        # --- Application No. से सर्च ---
+        st.divider()
+        st.subheader("🔍 Application No. से खोजें")
+        _q = norm_app_no(st.text_input("Application No. डालें:", key="p4_search_input"))
+        if _q:
+            _match_mask = _norm_keys == _q
+            if not _match_mask.any():
+                st.warning(f"⚠️ Application No. '{_q}' वाला कोई रिकॉर्ड नहीं मिला।")
+            else:
+                st.dataframe(df_show[_match_mask], use_container_width=True)
+                _cur = _status_map.get(_q)
+                st.caption(f"अभी की स्थिति: {_icon.get(_cur, 'अभी तय नहीं')}")
+                _b1, _b2 = st.columns(2)
+                with _b1:
+                    if st.button("✅ Submit", key="p4_submit_btn", type="primary", use_container_width=True):
+                        set_doc_status(_q, "Submit")
+                        st.rerun()
+                with _b2:
+                    if st.button("❌ Not Submit", key="p4_not_submit_btn", use_container_width=True):
+                        set_doc_status(_q, "Not Submit")
+                        st.rerun()
 
 # =========================================================================
 # 📊 PANEL 5: DASHBOARD / COUNTER PANEL (फुल स्क्रीन व्यूअर - भाग 1 और भाग 2 आपस में हाइड/शो)
@@ -4162,8 +4151,8 @@ elif active_panel == "⚙️ 6. Admin Panel":
     # =====================================================================
     if admin_section_toggle("panelvis", "👁️ पैनल Hide / Unhide करें (P1 से P5)", "जिस पैनल को Hide करेंगे, उसमें सही पासवर्ड डालने पर भी डेटा नहीं दिखेगा (सिर्फ पैनल का ढांचा दिखेगा)। Unhide करने पर डेटा फिर से दिखने लगेगा।"):
 
-        hide_cols = st.columns(4)
-        hide_keys = ["p1", "p2", "p4", "p5"]
+        hide_cols = st.columns(5)
+        hide_keys = ["p1", "p2", "p3", "p4", "p5"]
         new_hidden_state = {}
         for i, pk in enumerate(hide_keys):
             with hide_cols[i]:
